@@ -1,0 +1,48 @@
+/* HTML/SVG explainer animations, replacing six original MP4 embeds. */
+.patacon-animation-shell{
+  position:relative;display:block;min-width:0;min-height:0!important;padding:0!important;
+  background:#fff!important;cursor:default;overflow:hidden;
+}
+.patacon-animation-frame{
+  display:block;width:100%;height:auto;aspect-ratio:var(--animation-aspect,16/9);
+  border:0;background:#fff;
+}
+.patacon-animation-shell.is-expanded{
+  position:fixed!important;inset:auto!important;z-index:20000!important;
+  left:var(--expanded-left,0px)!important;top:var(--expanded-top,0px)!important;
+  width:var(--expanded-width,100vw)!important;height:var(--expanded-height,100vh)!important;max-width:none!important;max-height:none!important;
+  margin:0!important;border:0!important;border-radius:0!important;
+  box-shadow:none!important;background:#fff!important;overflow:hidden!important;
+}
+.patacon-animation-shell.is-expanded .patacon-animation-frame{width:100%;height:100%;aspect-ratio:auto}
+.patacon-animation-placeholder{width:100%;pointer-events:none}
+
+/* A visible return action, in addition to Browser Back and the iframe's Close. */
+.patacon-animation-toolbar{display:none}
+.patacon-animation-shell.is-expanded{
+  display:flex!important;flex-direction:column;align-items:stretch;justify-content:flex-start;
+}
+.patacon-animation-shell.is-expanded .patacon-animation-toolbar{
+  display:flex;align-items:center;gap:20px;flex:0 0 auto;min-height:48px;
+  width:100%;padding:6px 16px;background:#fff;border-bottom:1px solid #e5edf2;
+  color:#405b70;line-height:1.3;
+}
+.patacon-animation-back{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;flex-shrink:0;
+  min-height:36px;padding:7px 11px;border:1px solid #dce5ec;border-radius:7px;
+  background:#f4f8fb;color:#254f6d;font:600 13px/1.3 Arial,Helvetica,sans-serif;cursor:pointer;
+}
+.patacon-animation-back:hover{background:#e9f1f7}
+.patacon-animation-back:focus-visible{outline:2px solid #407ca7;outline-offset:2px}
+.patacon-animation-back svg{width:17px;height:17px;flex-shrink:0}
+.patacon-animation-toolbar-title{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font:500 13px/1.4 Arial,Helvetica,sans-serif;color:#5a7183;
+}
+.patacon-animation-shell.is-expanded .patacon-animation-frame{
+  flex:1 1 0;min-height:0;height:0;max-height:none;aspect-ratio:auto;
+}
+@media(max-width:600px){
+  .patacon-animation-shell.is-expanded .patacon-animation-toolbar{gap:10px;padding:6px 9px}
+  .patacon-animation-toolbar-title{font-size:11px}
+}

@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="An animated, vector-based comparison of ambient-space and tangent-space projection, recreated for the PATACON project page.">
+<title>Ambient Space vs. Tangent Space — PATACON</title>
+<script>
+  // Embedded and standalone modes use the same self-contained file.
+  if (new URLSearchParams(location.search).get('embed') === '1') {
+    document.documentElement.classList.add('embed');
+  }
+</script>
+<style>
+  :root { color-scheme: light; --ink: #142739; --muted: #6b7885; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: #fff; }
+  body {
+    min-height: 100vh; min-height: 100svh; display: flex; align-items: center;
+    justify-content: center; color: var(--ink);
+    font-family: Arial, Helvetica, sans-serif; -webkit-font-smoothing: antialiased;
+  }
+  button, select, input { font: inherit; }
+  button { -webkit-tap-highlight-color: transparent; }
+  .viewer { width: min(1500px, 100%); position: relative; background: #fff; }
+  .scene { position: relative; width: 100%; aspect-ratio: 48 / 23; background: #fff; }
+  .scene > svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .controls {
+    min-height: 62px; display: flex; align-items: center; gap: 10px;
+    padding: 10px 20px; border-top: 1px solid #e8edf1;
+    font-size: 13px; color: #405468; background: #fff;
+  }
+  .control-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    min-height: 36px; padding: 7px 10px; border: 1px solid transparent;
+    border-radius: 7px; background: transparent; color: inherit; cursor: pointer;
+    white-space: nowrap;
+  }
+  .control-btn:hover { background: #f0f5f8; }
+  .control-btn svg, .mini-btn svg, .expand-hint svg { width: 16px; height: 16px; flex: none; }
+  .control-btn.primary { background: #edf4f8; color: #1d4966; min-width: 91px; }
+  .control-btn.primary:hover { background: #e1edf4; }
+  button:focus-visible, select:focus-visible, input:focus-visible {
+    outline: 2px solid #326b91; outline-offset: 3px;
+  }
+  .timeline { flex: 1; min-width: 40px; accent-color: #406e8f; cursor: pointer; height: 24px; margin: 0 6px; }
+  .time { font-size: 12px; font-variant-numeric: tabular-nums; min-width: 101px; }
+  .speed { border: 1px solid #e2e8ee; background: white; color: #405468; padding: 7px; border-radius: 6px; cursor: pointer; }
+  .embed-controls, .expand-hint { display: none; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  .embed body { min-height: 0; height: 100vh; overflow: hidden; }
+  .embed .viewer { width: 100%; }
+  .embed:not(.expanded) .controls { display: none; }
+  .embed:not(.expanded) .scene > svg { cursor: zoom-in; }
+  .embed:not(.expanded) .embed-controls {
+    display: flex; gap: 2px; position: absolute; left: 9px; bottom: 7px;
+    opacity: .48; transition: opacity .16s ease;
+  }
+  .embed-controls:focus-within, .viewer:hover .embed-controls { opacity: 1 !important; }
+  .mini-btn { display: grid; place-items: center; width: 28px; height: 26px; border-radius: 6px; border: 0; color: #4a6172; background: rgba(247,250,252,.92); cursor: pointer; }
+  .mini-btn svg { width: 13px; height: 13px; }
+  .embed:not(.expanded) .expand-hint {
+    display: inline-flex; align-items: center; gap: 5px; position: absolute;
+    right: 9px; bottom: 7px; border: 0; border-radius: 999px;
+    padding: 6px 9px; color: #fff; background: rgba(12,34,53,.76);
+    font-size: 10px; font-weight: 600; cursor: zoom-in;
+  }
+  .expand-hint svg { width: 12px; height: 12px; }
+  .expanded body { height: 100vh; overflow: hidden; }
+  .viewer:fullscreen, .viewer.local-expanded {
+    width: 100vw; height: 100vh; max-width: none; display: flex;
+    flex-direction: column; justify-content: center; align-items: center; background: #fff;
+  }
+  .viewer.local-expanded { position: fixed; inset: 0; z-index: 10000; }
+  .expanded .viewer { width: 100vw; height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+  .viewer:fullscreen .scene, .viewer.local-expanded .scene, .expanded .scene {
+    width: min(100vw, calc((100vh - 62px) * 48 / 23)); flex-shrink: 0;
+  }
+  .viewer:fullscreen .controls, .viewer.local-expanded .controls, .expanded .controls {
+    width: min(100vw, calc((100vh - 62px) * 48 / 23)); flex-shrink: 0;
+  }
+  @media (max-width: 600px) {
+    .controls { min-height: 56px; padding: 8px; gap: 3px; font-size: 12px; }
+    .control-btn { padding: 7px; }
+    .control-btn.primary { min-width: 34px; }
+    .control-label { display: none; }
+    .time { font-size: 10px; min-width: 85px; }
+    .speed { padding: 5px 2px; font-size: 11px; }
+    .timeline { margin: 0 3px; }
+    .embed:not(.expanded) .expand-hint { font-size: 8px; padding: 4px 6px; right: 5px; bottom: 3px; }
+    .embed:not(.expanded) .embed-controls { left: 5px; bottom: 3px; }
+    .mini-btn { width: 22px; height: 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+<!-- LaTeX labels: pre-rendered MathJax SVG; no CDN or web-font dependency. -->
+<script src="../js/latex-equations.js?v=20261009-latex"></script>
+<script src="../js/latex-labels.js?v=20261009-latex"></script>
+</head>
+<body>
+<main class="viewer" id="viewer" aria-label="Ambient-space and tangent-space projection animation">
+  <div class="scene" id="scene">
+    <svg id="diagram" viewBox="0 0 960 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="diagram-title diagram-description">
+      <title id="diagram-title">Ambient space steering and tangent space steering</title>
+      <desc id="diagram-description">Two blue curved constraint manifolds. On the left, four candidate nodes on a line toward an ambient-space sample travel along long orange projection arrows and land close together on the manifold. On the right, three nodes sampled on a green tangent plane travel along short purple projection arrows and land farther apart. The left sequence plays first, followed by the right sequence.</desc>
+      <defs>
+        <linearGradient id="surface-fill" x1="0" y1="-8" x2="0" y2="157" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#6b9abc" stop-opacity=".88"/>
+          <stop offset=".42" stop-color="#a1c6d9" stop-opacity=".78"/>
+          <stop offset=".78" stop-color="#e1ecf6" stop-opacity=".68"/>
+          <stop offset="1" stop-color="#f7f9fd" stop-opacity=".66"/>
+        </linearGradient>
+        <linearGradient id="grid-fade" x1="0" y1="0" x2="0" y2="162" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="white" stop-opacity=".62"/>
+          <stop offset=".6" stop-color="white" stop-opacity=".85"/>
+          <stop offset="1" stop-color="white" stop-opacity=".40"/>
+        </linearGradient>
+        <mask id="grid-mask" maskUnits="userSpaceOnUse" x="-170" y="-10" width="340" height="180">
+          <rect x="-170" y="-10" width="340" height="180" fill="url(#grid-fade)"/>
+        </mask>
+        <marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+          <path d="M0 0 L10 5 L0 10 Z" fill="#555b60"/>
+        </marker>
+        <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto" markerUnits="userSpaceOnUse">
+          <path d="M0 0 L10 5 L0 10 Z" fill="#d76a38"/>
+        </marker>
+        <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto" markerUnits="userSpaceOnUse">
+          <path d="M0 0 L10 5 L0 10 Z" fill="#94268b"/>
+        </marker>
+        <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+          <path d="M0 0 L10 5 L0 10 Z" fill="#b90012"/>
+        </marker>
+        <marker id="arrow-purple-both" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+          <path d="M0 0 L10 5 L0 10 Z" fill="#791274"/>
+        </marker>
+        <marker id="arrow-black" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto" markerUnits="userSpaceOnUse">
+          <path d="M0 0 L10 5 L0 10 Z" fill="#162635"/>
+        </marker>
+        <g id="manifold-surface"></g>
+      </defs>
+      <rect width="960" height="460" fill="white"/>
+      <g font-family="Arial, Helvetica, sans-serif" fill="#080b0d">
+        <text x="65" y="63" font-size="16" font-weight="700">Ambient space steering</text>
+        <text x="589" y="63" font-size="16" font-weight="700">Tangent space steering</text>
+      </g>
+      <use href="#manifold-surface" transform="translate(237 208)"/>
+      <use href="#manifold-surface" transform="translate(709 208)"/>
+      <g font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="18" fill="#284961">
+        <g data-tex="\mathcal{M}" data-x="400" data-y="335" data-size="18" data-fill="#284961"></g><g data-tex="\mathcal{M}" data-x="881" data-y="335" data-size="18" data-fill="#284961"></g>
+      </g>
+      <polygon points="596,187 850,187 827,240 573,240" fill="#83ed89" fill-opacity=".65"/>
+      <text x="596" y="181" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#315b2a">Tangent space</text>
+      <!-- Steering directions remain visible throughout the loop. -->
+      <path d="M 237 210 L 375.5 73.5" stroke="#555b60" stroke-width="1.35" stroke-dasharray="5 4" fill="none" marker-end="url(#arrow-gray)"/>
+      <path d="M 709 207 L 828 207" stroke="#555b60" stroke-width="1.35" stroke-dasharray="5 4" fill="none" marker-end="url(#arrow-gray)"/>
+      <g id="ambient-projection"></g>
+      <g id="tangent-projection"></g>
+      <g id="ambient-bracket" opacity="0" fill="none" stroke="#b90012" stroke-width="1.3">
+        <path d="M 353 98 H 372 M 316 229 H 372" stroke-dasharray="5 4"/>
+        <path d="M 363 99 V 228" marker-start="url(#arrow-red)" marker-end="url(#arrow-red)"/>
+        <text x="374" y="160" stroke="none" fill="#b90012" font-family="Arial, Helvetica, sans-serif" font-size="11.7" font-weight="700">
+          <tspan x="374">Long</tspan><tspan x="374" dy="14">projection distance</tspan>
+        </text>
+      </g>
+      <g id="tangent-bracket" opacity="0" fill="none" stroke="#791274" stroke-width="1.3">
+        <path d="M 816 207 H 838 M 816 260 H 838" stroke-dasharray="5 4"/>
+        <path d="M 829 208 V 259" marker-start="url(#arrow-purple-both)" marker-end="url(#arrow-purple-both)"/>
+        <text x="835" y="234" stroke="none" fill="#791274" font-family="Arial, Helvetica, sans-serif" font-size="11.7" font-weight="700">
+          <tspan x="835">Short</tspan><tspan x="835" dy="14">projection distance</tspan>
+        </text>
+      </g>
+      <g id="anchors">
+        <circle cx="237" cy="210" r="6.2" fill="#000"/>
+        <circle cx="381" cy="68" r="5.6" fill="#ffff72" stroke="#a4a9a6" stroke-width="1"/>
+        <circle cx="709" cy="207" r="6.2" fill="#000"/>
+        <circle cx="835" cy="207" r="5.6" fill="#ffff72" stroke="#a4a9a6" stroke-width="1"/>
+      </g>
+      <g font-family="'Times New Roman', Georgia, serif" fill="#101010" font-size="16">
+        <g data-tex="q_{\mathrm{near}}" data-x="203" data-y="201" data-size="16" data-fill="#101010"></g>
+        <g data-tex="q_{\mathrm{rand}}" data-x="393" data-y="69" data-size="16" data-fill="#101010"></g>
+        <g data-tex="\bar{q}_{\mathrm{near}}" data-x="665" data-y="201" data-size="16" data-fill="#101010"></g>
+        <g data-tex="\bar{q}_{\mathrm{rand}}" data-x="846" data-y="207" data-size="16" data-fill="#101010"></g>
+      </g>
+      <g id="ambient-legend" fill="#1b2024">
+        <g font-family="'Times New Roman', Georgia, serif" font-size="13">
+          <g data-tex="q_{\mathrm{rand}}" data-x="73" data-y="388" data-size="13" data-fill="#1b2024"></g>
+          <g data-tex="q_{\mathrm{near}}" data-x="73" data-y="414" data-size="13" data-fill="#1b2024"></g>
+        </g>
+        <g font-family="Arial, Helvetica, sans-serif" font-size="10.5">
+          <text x="107" y="390">Random sample</text><text x="107" y="416">Nearest neighbor</text>
+        </g>
+      </g>
+      <g id="tangent-legend" fill="#1b2024">
+        <g font-family="'Times New Roman', Georgia, serif" font-size="13">
+          <g data-tex="\bar{q}_{\mathrm{rand}}" data-x="552" data-y="388" data-size="13" data-fill="#1b2024"></g>
+          <g data-tex="\bar{q}_{\mathrm{near}}" data-x="552" data-y="414" data-size="13" data-fill="#1b2024"></g>
+        </g>
+        <g font-family="Arial, Helvetica, sans-serif" font-size="10.5">
+          <text x="586" y="390">Random sample <tspan font-weight="700">on Tangent space</tspan></text>
+          <text x="586" y="416">Nearest neighbor <tspan font-weight="700">on Tangent space</tspan></text>
+        </g>
+      </g>
+      <g id="ambient-caption" opacity="0" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">
+        <text x="237" y="400" font-size="12" font-weight="700" fill="#101010">Ignores manifold geometry</text>
+        <text x="237" y="415" font-size="11.2" fill="#454b50">Long projection distance. May yield little progress after projection</text>
+      </g>
+      <g id="tangent-caption" opacity="0" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">
+        <text x="709" y="400" font-size="12" font-weight="700" fill="#101010">Uses local manifold geometry</text>
+        <text x="709" y="415" font-size="11.2" fill="#454b50">Short projection distance. Promotes progress along the manifold</text>
+      </g>
+    </svg>
+    <div class="embed-controls" aria-label="Animation playback">
+      <button class="mini-btn play-toggle" type="button" aria-label="Pause animation" title="Pause / play"><span class="play-icon"></span></button>
+      <button class="mini-btn replay" type="button" aria-label="Replay animation" title="Replay"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7a7 7 0 1 1-.3 5M4 2v5h5"/></svg></button>
+    </div>
+    <button class="expand-hint expand-toggle" type="button" aria-label="Enlarge animation">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4"/></svg>Click to enlarge
+    </button>
+  </div>
+  <div class="controls" role="group" aria-label="Animation controls">
+    <button class="control-btn primary play-toggle" type="button" aria-label="Pause animation" title="Play / pause (Space)">
+      <span class="play-icon"></span><span class="control-label play-label">Pause</span>
+    </button>
+    <button class="control-btn replay" type="button" aria-label="Replay animation" title="Replay (R)">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7a7 7 0 1 1-.3 5M4 2v5h5"/></svg><span class="control-label">Replay</span>
+    </button>
+    <label class="sr-only" for="timeline">Animation position in seconds</label>
+    <input id="timeline" class="timeline" type="range" min="0" max="9.7" step="0.01" value="0" aria-valuetext="0.0 of 9.7 seconds">
+    <span id="time" class="time" aria-hidden="true">0:00.0 / 0:09.7</span>
+    <label class="sr-only" for="speed">Playback speed</label>
+    <select id="speed" class="speed" aria-label="Playback speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+    <button class="control-btn expand-toggle" type="button" aria-label="Enlarge animation" title="Enlarge / exit (F)">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4"/></svg><span class="control-label expand-label">Enlarge</span>
+    </button>
+  </div>
+  <noscript><p style="padding:16px;text-align:center">Enable JavaScript to display and play the vector animation.</p></noscript>
+</main>
+<script>
+(() => {
+  'use strict';
+  const NS = 'http://www.w3.org/2000/svg';
+  const $ = id => document.getElementById(id);
+  const CHANNEL = 'patacon-steering-animation';
+  const EMBED = document.documentElement.classList.contains('embed');
+  const PARENTED = EMBED && window.parent !== window;
+  const viewer = $('viewer');
+  const diagram = $('diagram');
+  const timeline = $('timeline');
+  const duration = 9.7;
+
+  function svg(tag, attrs, parent) {
+    const el = document.createElementNS(NS, tag);
+    for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, String(value));
+    if (parent) parent.appendChild(el);
+    return el;
+  }
+  const clamp = (x, lo=0, hi=1) => Math.max(lo, Math.min(hi, x));
+  const ramp = (time, from, to) => clamp((time - from) / (to - from));
+  const smooth = x => x*x*(3-2*x);
+  const opacity = (el, amount) => el.setAttribute('opacity', amount.toFixed(4));
+  const lerp = (a, b, u) => [a[0] + (b[0]-a[0])*u, a[1] + (b[1]-a[1])*u];
+  const xy = p => `${p[0].toFixed(2)} ${p[1].toFixed(2)}`;
+
+  // A static orthographic spherical-patch mesh: pure SVG, no textures,
+  // raster frames, video, external fonts, CDNs, or WebGL dependencies.
+  function buildManifold() {
+    const R = 2.3, radius = 1.65, root2 = Math.sqrt(2);
+    const project = (u,v) => [
+      95*(u-v)/root2,
+      16*(u+v)/root2 + 183*(R-Math.sqrt(Math.max(0, R*R-u*u-v*v)))
+    ];
+    const cloud = [];
+    for (let j=0; j<=55; j++) {
+      const r = radius*j/55;
+      for (let i=0; i<200; i++) {
+        const a = i*Math.PI*2/200;
+        cloud.push(project(r*Math.cos(a), r*Math.sin(a)));
+      }
+    }
+    // Convex hull gives the silhouette of the projected spherical patch.
+    const sorted = cloud.sort((a,b) => a[0]-b[0] || a[1]-b[1]);
+    const cross = (o,a,b) => (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0]);
+    const lower=[], upper=[];
+    for (const p of sorted) {
+      while (lower.length>=2 && cross(lower[lower.length-2],lower[lower.length-1],p)<=0) lower.pop();
+      lower.push(p);
+    }
+    for (let i=sorted.length-1; i>=0; i--) {
+      const p=sorted[i];
+      while (upper.length>=2 && cross(upper[upper.length-2],upper[upper.length-1],p)<=0) upper.pop();
+      upper.push(p);
+    }
+    const outline=lower.slice(0,-1).concat(upper.slice(0,-1));
+    const group=$('manifold-surface');
+    svg('path', {d:'M'+outline.map(xy).join('L')+'Z',fill:'url(#surface-fill)'},group);
+    const grid=svg('g',{fill:'none',stroke:'#6099c0','stroke-width':'.48','stroke-opacity':'.35',mask:'url(#grid-mask)'},group);
+    for (let axis=0; axis<2; axis++) {
+      for (let i=1; i<43; i++) {
+        const a=-radius+2*radius*i/43;
+        const span=Math.sqrt(radius*radius-a*a), points=[];
+        for (let j=0; j<=90; j++) {
+          const b=-span+2*span*j/90;
+          points.push(axis===0 ? project(a,b) : project(b,a));
+        }
+        svg('path',{d:'M'+points.map(xy).join('L')},grid);
+      }
+    }
+  }
+  buildManifold();
+
+  // These are diagram coordinates reconstructed from the supplied clip.
+  // They illustrate projection; they are not a live IK/Newton solver.
+  const ambient = {
+    origin:[237,210],
+    samples:[[265.8,181.6],[294.6,153.2],[323.4,124.8],[352.2,96.4]],
+    targets:[[262,211],[278,216],[293,223],[306,229]],
+    projectionStart:1.20, projectionDuration:.67, stagger:.075,
+    sampleStart:0, color:'#d76a38', marker:'arrow-orange', group:$('ambient-projection')
+  };
+  const tangent = {
+    origin:[709,207],
+    samples:[[746,207],[782,207],[815,207]],
+    targets:[[746,224],[782,241],[815,260]],
+    projectionStart:5.65, projectionDuration:.55, stagger:.10,
+    sampleStart:4.55, color:'#94268b', marker:'arrow-purple', group:$('tangent-projection')
+  };
+  function prepare(system) {
+    system.edgeLayer=svg('g',{fill:'none',stroke:'#142432','stroke-width':'1.85','stroke-linecap':'round','stroke-linejoin':'round'},system.group);
+    system.arrowLayer=svg('g',{fill:'none',stroke:system.color,'stroke-width':'1.35','stroke-linecap':'round'},system.group);
+    system.nodeLayer=svg('g',{},system.group);
+    system.items=system.samples.map((source,i) => {
+      const arrow=svg('path',{'marker-end':`url(#${system.marker})`,opacity:0},system.arrowLayer);
+      const edge=svg('path',{opacity:0},system.edgeLayer);
+      const node=svg('circle',{cx:source[0],cy:source[1],r:4.2,fill:'#ffede3',stroke:'#1b242a','stroke-width':'1.05'},system.nodeLayer);
+      return {arrow,edge,node,source,target:system.targets[i]};
+    });
+  }
+  prepare(ambient); prepare(tangent);
+
+  // Short progress ticks reproduce the shrinking ambient-space steps.
+  const ticks=svg('g',{stroke:'#142432','stroke-width':'1.3',fill:'none',opacity:0},ambient.group);
+  [[242,260,228,213],[267,278,240,219],[284,293,249,226],[299,306,256,233]].forEach(([a,b,y,top]) => {
+    const x=(a+b)/2;
+    svg('path',{d:`M${x} ${top}V${y-4}`,'marker-end':'url(#arrow-black)'},ticks);
+    svg('path',{d:`M${a} ${y-4}V${y+4}M${a} ${y}H${b}M${b} ${y-4}V${y+4}`},ticks);
+  });
+
+  function renderSystem(system,time) {
+    const done=[];
+    system.items.forEach((item,i) => {
+      const show=system===ambient ? 1 : smooth(ramp(time,system.sampleStart+i*.09,system.sampleStart+.26+i*.09));
+      const progress=smooth(ramp(time,system.projectionStart+i*system.stagger,system.projectionStart+i*system.stagger+system.projectionDuration));
+      done.push(progress);
+      const point=lerp(item.source,item.target,progress);
+      item.node.setAttribute('cx',point[0].toFixed(3));
+      item.node.setAttribute('cy',point[1].toFixed(3));
+      // The sampled node itself moves to the manifold and turns gray.
+      const start=system===ambient ? [255,237,227] : [234,252,231];
+      const end=[147,156,162];
+      item.node.setAttribute('fill',`rgb(${start.map((v,k)=>Math.round(v+(end[k]-v)*progress)).join(',')})`);
+      opacity(item.node,show);
+      const length=Math.hypot(point[0]-item.source[0],point[1]-item.source[1]);
+      const arrowEnd=length>5.8 ? lerp(item.source,point,(length-5.8)/length) : item.source;
+      item.arrow.setAttribute('d',`M${xy(item.source)}L${xy(arrowEnd)}`);
+      opacity(item.arrow,length>6.0 ? show : 0);
+      // Only connect projected endpoints after both have landed.
+      const previous=i===0 ? system.origin : system.targets[i-1];
+      const connect=smooth(ramp(time,system.projectionStart+i*system.stagger+system.projectionDuration-.07,system.projectionStart+i*system.stagger+system.projectionDuration+.11));
+      item.edge.setAttribute('d',`M${xy(previous)}L${xy(lerp(previous,item.target,connect))}`);
+      opacity(item.edge,connect);
+    });
+  }
+  const leftLegend=$('ambient-legend'), rightLegend=$('tangent-legend');
+  const leftCaption=$('ambient-caption'), rightCaption=$('tangent-caption');
+  const leftBracket=$('ambient-bracket'), rightBracket=$('tangent-bracket');
+  const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
+  let time=reduced.matches ? 8.5 : 0;
+  let playing=!reduced.matches;
+  let speed=1, visible=true, expanded=false, animationId=0, previous=0;
+
+  function render() {
+    renderSystem(ambient,time); renderSystem(tangent,time);
+    opacity(leftLegend,1-smooth(ramp(time,1.42,1.80)));
+    opacity(rightLegend,1-smooth(ramp(time,5.46,5.84)));
+    opacity(leftBracket,smooth(ramp(time,1.86,2.20)));
+    opacity(rightBracket,smooth(ramp(time,6.19,6.58)));
+    opacity(ticks,smooth(ramp(time,1.90,2.23)));
+    opacity(leftCaption,smooth(ramp(time,3.04,3.44)));
+    opacity(rightCaption,smooth(ramp(time,7.60,8.06)));
+    timeline.value=time.toFixed(2);
+    timeline.setAttribute('aria-valuetext',`${time.toFixed(1)} of ${duration} seconds`);
+    $('time').textContent=`0:${time.toFixed(1).padStart(4,'0')} / 0:09.7`;
+    diagram.dataset.time=time.toFixed(3);
+  }
+  function canRun() { return playing && visible && !document.hidden; }
+  function frame(now) {
+    animationId=0;
+    if (!canRun()) { previous=0; return; }
+    if (previous) time=(time+Math.min(.12,(now-previous)/1000)*speed)%duration;
+    previous=now; render(); animationId=requestAnimationFrame(frame);
+  }
+  function schedule() {
+    previous=0;
+    if (animationId) cancelAnimationFrame(animationId);
+    animationId=canRun() ? requestAnimationFrame(frame) : 0;
+  }
+  const PLAY='<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M6 3.5v13l11-6.5z"/></svg>';
+  const PAUSE='<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><rect x="5" y="3.5" width="3.5" height="13" rx=".5"/><rect x="11.5" y="3.5" width="3.5" height="13" rx=".5"/></svg>';
+  function syncButtons() {
+    document.querySelectorAll('.play-icon').forEach(el=>el.innerHTML=playing ? PAUSE : PLAY);
+    document.querySelectorAll('.play-label').forEach(el=>el.textContent=playing ? 'Pause' : 'Play');
+    document.querySelectorAll('.play-toggle').forEach(el=>el.setAttribute('aria-label',playing ? 'Pause animation' : 'Play animation'));
+    document.querySelectorAll('.expand-label').forEach(el=>el.textContent=expanded ? 'Close' : 'Enlarge');
+    document.querySelectorAll('.expand-toggle').forEach(el=>el.setAttribute('aria-label',expanded ? 'Close enlarged animation' : 'Enlarge animation'));
+  }
+  function play() { playing=true; syncButtons(); schedule(); }
+  function pause() { playing=false; syncButtons(); schedule(); }
+  function togglePlay() { playing ? pause() : play(); }
+  function replay() { time=0; render(); play(); }
+  function seek(value, pauseAfter=false) {
+    const n=Number(value); if (!Number.isFinite(n)) return;
+    time=clamp(n,0,duration-.001); previous=0;
+    if (pauseAfter) pause(); render();
+  }
+  function setSpeed(value) {
+    const n=Number(value); if (!Number.isFinite(n) || n<=0) return;
+    speed=clamp(n,.1,4); previous=0;
+    const select=$('speed');
+    if ([...select.options].some(o=>Number(o.value)===speed)) select.value=String(speed);
+  }
+  // file:// can expose either 'null' or 'file://' as its origin.
+  const localOrigin = location.protocol === 'file:' || location.origin === 'null';
+  const parentOrigin = localOrigin ? '*' : location.origin;
+  function post(type,extra={}) { if(PARENTED) window.parent.postMessage({channel:CHANNEL,type,...extra},parentOrigin); }
+  function setExpanded(value) {
+    expanded=Boolean(value); document.documentElement.classList.toggle('expanded',expanded); syncButtons();
+    if (expanded) document.querySelector('.controls .play-toggle').focus({preventScroll:true});
+  }
+  async function toggleExpand() {
+    if (PARENTED) { post('toggle-expand'); return; }
+    if (document.fullscreenElement) { await document.exitFullscreen().catch(()=>{}); return; }
+    if (viewer.classList.contains('local-expanded')) { viewer.classList.remove('local-expanded'); setExpanded(false); return; }
+    try {
+      if (!viewer.requestFullscreen) throw new Error('Fullscreen unavailable');
+      await viewer.requestFullscreen();
+    } catch (_) {
+      // A full-window fallback works even when the Fullscreen API is unavailable.
+      viewer.classList.add('local-expanded'); setExpanded(true);
+    }
+  }
+  document.querySelectorAll('.play-toggle').forEach(el=>el.addEventListener('click',togglePlay));
+  document.querySelectorAll('.replay').forEach(el=>el.addEventListener('click',replay));
+  document.querySelectorAll('.expand-toggle').forEach(el=>el.addEventListener('click',toggleExpand));
+  timeline.addEventListener('input',()=>seek(timeline.value));
+  $('speed').addEventListener('change',event=>setSpeed(event.target.value));
+  diagram.addEventListener('click',()=>{ if (EMBED && !expanded) toggleExpand(); });
+  document.addEventListener('fullscreenchange',()=>setExpanded(Boolean(document.fullscreenElement)));
+  document.addEventListener('visibilitychange',schedule);
+  document.addEventListener('keydown',event=>{
+    if (expanded && event.key==='Tab') {
+      const controls=[...document.querySelectorAll('.controls button,.controls input,.controls select')];
+      const first=controls[0], last=controls[controls.length-1];
+      if (event.shiftKey && document.activeElement===first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement===last) { event.preventDefault(); first.focus(); }
+      return;
+    }
+    if (event.key==='Escape' && expanded && PARENTED) { event.preventDefault(); post('close-expand'); return; }
+    if (event.key==='Escape' && viewer.classList.contains('local-expanded')) { viewer.classList.remove('local-expanded'); setExpanded(false); return; }
+    if (event.target.closest('input,select,button,a,textarea') || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.code==='Space') { event.preventDefault(); togglePlay(); }
+    else if (event.key.toLowerCase()==='r') replay();
+    else if (event.key.toLowerCase()==='f') toggleExpand();
+    else if (event.key==='ArrowLeft') { event.preventDefault(); seek(time-.5); }
+    else if (event.key==='ArrowRight') { event.preventDefault(); seek(time+.5); }
+  });
+  window.addEventListener('message',event=>{
+    if (!PARENTED || event.source!==window.parent) return;
+    if (!localOrigin && event.origin !== location.origin) return;
+    const m=event.data;
+    if (!m || m.channel!==CHANNEL) return;
+    if (m.type==='visibility') { visible=Boolean(m.visible); schedule(); }
+    else if (m.type==='expanded') { setExpanded(m.expanded); if (expanded) { visible=true; schedule(); } }
+    else if (m.type==='restart') replay();
+    else if (m.type==='seek') seek(m.time,true);
+  });
+  // Readable control API for embedding, tests, or later timing changes. Seconds, not frames.
+  window.PATACON_STEERING=Object.freeze({
+    play,pause,replay,seek,setSpeed,duration,
+    get state() { return {time,playing,speed,visible,expanded}; }
+  });
+  syncButtons(); render(); schedule(); post('ready');
+})();
+</script>
+</body>
+</html>

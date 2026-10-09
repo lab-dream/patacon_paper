@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="PATACON: GPU-Parallel Tangent-Bundle RRT-Connect for Constrained Motion Planning.">
+  <meta name="theme-color" content="#ffffff">
+  <title>PATACON — GPU-Parallel Tangent-Bundle RRT-Connect</title>
+  <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/styles.css">
+  <link rel="stylesheet" href="assets/css/animations.css?v=20261009-expand-back">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#top" aria-label="PATACON home">PATACON</a>
+      <nav class="nav" aria-label="Primary navigation">
+        <a href="#overview">Overview</a>
+        <a href="#method">Method</a>
+        <a href="#results">Results</a>
+        <a href="#replanning">Replanning</a>
+        <a href="#hardware">Hardware</a>
+        <a href="#citation">BibTeX</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero hero-video section-pad">
+      <div class="hero-bg" aria-hidden="true">
+        <video class="loop-video hero-bg-video" autoplay muted loop playsinline preload="metadata" poster="assets/images/hero-poster.jpg">
+          <source src="assets/video/hero-replanning.mp4" type="video/mp4">
+        </video>
+        <div class="hero-scrim"></div>
+      </div>
+
+      <div class="container narrow center hero-content">
+        <p class="eyebrow">Constrained Motion Planning</p>
+        <h1>PATACON</h1>
+        <h2>GPU-Parallel Tangent-Bundle RRT-Connect<br class="desktop-break"> for Constrained Motion Planning</h2>
+
+        <div class="authors" aria-label="Authors">
+          <span>Gahyun Oh<sup>1</sup></span><span class="sep">·</span>
+          <span>Junho An<sup>1</sup></span><span class="sep">·</span>
+          <span>Suhyun Jeon<sup>2</sup></span><span class="sep">·</span>
+          <span>Suhan Park<sup>1,*</sup></span>
+        </div>
+        <div class="affiliations">
+          <div><sup>1</sup> Department of Robotics, Kwangwoon University, Seoul, Republic of Korea</div>
+          <div><sup>2</sup> Department of Intelligence and Information, Graduate School of Convergence Science and Technology, Seoul National University, Republic of Korea</div>
+          <div><sup>*</sup> Corresponding author</div>
+        </div>
+
+        <div class="hero-actions">
+          <a id="paperBtn" class="btn primary disabled" href="#" aria-disabled="true">Paper · arXiv soon</a>
+          <a class="btn" href="#video">Video</a>
+          <a id="codeBtn" class="btn disabled" href="#" aria-disabled="true">Code · soon</a>
+          <a class="btn" href="#citation">BibTeX</a>
+        </div>
+
+        <p class="hero-caption">Real-time constrained replanning across simulated and physical whole-body tasks.</p>
+      </div>
+    </section>
+
+    <section id="overview" class="section-pad overview-section">
+      <div class="container overview-heading">
+        <p class="eyebrow">Overview</p>
+        <h2 class="section-title overview-title">Tangent-Space Exploration × GPU Parallelism</h2>
+      </div>
+
+      <div class="container overview-grid">
+        <div class="overview-copy">
+          <p>
+            PATACON combines two complementary ideas for fast constrained motion planning: <strong>tangent-space-guided exploration</strong> and <strong>GPU-parallel expansion and validation</strong>. Instead of steering only in the ambient configuration space and relying on projection afterward, the planner uses local tangent spaces to generate directions that better follow the geometry of the constraint manifold.
+          </p>
+          <p>
+            During exploration, CUDA blocks dynamically select ready tangent spaces from tree-specific shared banks. Tangent-Guided Sampling (TGS) samples and searches locally within the selected tangent space, while Tangent-Guided Multi-Edge Projection (TGMP) reuses that exploration decision to generate several consecutive candidate edges.
+          </p>
+          <p>
+            These candidate edges are projected and validated concurrently on the GPU, and only the longest consecutively valid prefix is inserted into the tree before the planner attempts to connect toward the opposite tree. This couples geometry-aware exploration with massively parallel execution, reducing wasted off-manifold motion while amortizing tangent-space management over multiple edges.
+          </p>
+        </div>
+
+        <figure class="overview-side-figure">
+          <img class="overview-figure" src="assets/images/patacon-overview.png" alt="PATACON overview with start and goal trees, shared tangent-space banks, and multiple CUDA blocks exploring local tangent spaces." loading="eager">
+        </figure>
+      </div>
+
+      <div class="container stats-grid">
+        <div class="stat-card"><strong>7–35 DoF</strong><span>benchmark range</span></div>
+        <div class="stat-card"><strong>11.25×</strong><span>largest cpRRTC / PATACON latency ratio</span></div>
+        <div class="stat-card"><strong>100%</strong><span>PATACON success in reported benchmark regimes</span></div>
+      </div>
+    </section>
+
+    <section id="video" class="section-pad soft-section video-section">
+      <div class="container video-section-inner">
+        <h2 class="video-section-title">Video</h2>
+        <div class="media-shell video-main">
+          <video controls playsinline preload="metadata" poster="assets/images/paper-video-first-frame.jpg" aria-label="PATACON paper explanation video">
+            <source src="assets/video/patacon-paper-video.mp4" type="video/mp4">
+          </video>
+        </div>
+      </div>
+    </section>
+
+    <section id="idea" class="section-pad motivation-section">
+      <div class="container narrow center motivation-heading">
+        <p class="eyebrow">Motivation</p>
+        <h2 class="section-title">Why PATACON?</h2>
+        <p class="lead">
+          Fast constrained planning is not only about accelerating projection. The planner must also avoid wasting computation on expansion directions that ignore the local geometry of the constraint manifold.
+        </p>
+      </div>
+
+      <div class="container motivation-flow">
+        <article class="motivation-block motivation-block-tasks">
+          <div class="motivation-copy">
+            <div class="motivation-index">01</div>
+            <p class="card-label">Why fast constrained planning?</p>
+            <h3>Whole-body motion must be planned repeatedly under multiple constraints.</h3>
+            <p>
+              Bimanual and humanoid tasks operate in high-dimensional configuration spaces while maintaining task-dependent kinematic constraints, joint limits, and collision avoidance. When targets, obstacles, or task conditions change, the robot must replan repeatedly with low latency for responsive execution.
+            </p>
+            <div class="motivation-keywords" aria-label="Key challenges">
+              <span>High Dimension</span>
+              <span>Multiple Constraints</span>
+              <span>Repeated Replanning</span>
+            </div>
+          </div>
+          <div class="task-demo-pair" aria-label="Representative constrained whole-body tasks">
+            <figure class="task-demo">
+              <video class="loop-video" autoplay muted loop playsinline preload="metadata">
+                <source src="assets/video/eval-ffw-mobile.mp4" type="video/mp4">
+              </video>
+              <figcaption><strong>FFW-SG2</strong><span>18 DoF · Bimanual + Axis + CoM</span></figcaption>
+            </figure>
+            <figure class="task-demo">
+              <video class="loop-video" autoplay muted loop playsinline preload="metadata">
+                <source src="assets/video/eval-g1-axis.mp4" type="video/mp4">
+              </video>
+              <figcaption><strong>Unitree G1</strong><span>35 DoF · Bimanual + Axis + Feet + CoM</span></figcaption>
+            </figure>
+          </div>
+        </article>
+
+        <article class="motivation-block motivation-block-gpu">
+          <div class="motivation-visual">
+            <div class="media-shell flat-media patacon-animation-shell" data-animation="gpu-acceleration-cropped" data-channel="patacon-diagram-animation" style="--animation-aspect:960/460">
+              <iframe class="patacon-animation-frame" src="assets/animations/gpu-acceleration-cropped.html?embed=1&amp;v=20261009-latex" title="GPU acceleration diagram" width="960" height="460" loading="eager" allow="fullscreen" allowfullscreen></iframe>
+            </div>
+          </div>
+          <div class="motivation-copy">
+            <div class="motivation-index">02</div>
+            <p class="card-label">Limitation of GPU acceleration</p>
+            <h3>GPU parallelism makes projection faster, but steering remains unchanged.</h3>
+            <p>
+              Existing GPU planners can project and validate motion waypoints in parallel. However, the extension itself still steers toward samples in the ambient configuration space, without using the local geometry of the constraint manifold.
+            </p>
+            <p class="motivation-emphasis">The computation is parallelized, but the exploration geometry is unchanged.</p>
+          </div>
+        </article>
+
+        <article class="motivation-block motivation-block-ambient">
+          <div class="motivation-copy">
+            <div class="motivation-index">03</div>
+            <p class="card-label">Limitation of ambient-space steering</p>
+            <h3>Ambient-space steering can spend projection effort on poor candidates.</h3>
+            <p>
+              Because ambient-space samples ignore the manifold shape, candidate motions can deviate substantially from the feasible set. Projection may require a large correction, and the projected motion can make little useful progress along the manifold.
+            </p>
+            <div class="steering-contrast">
+              <div><strong>Ambient space</strong><span>Ignores manifold geometry</span><span>Large projection correction</span><span>Little progress after projection</span></div>
+              <div><strong>Tangent space</strong><span>Uses local manifold geometry</span><span>Candidates stay closer to the manifold</span><span>Promotes useful progress</span></div>
+            </div>
+          </div>
+          <div class="motivation-visual">
+            <div class="media-shell flat-media patacon-animation-shell" data-animation="ambient-vs-tangent" data-channel="patacon-steering-animation" style="--animation-aspect:960/460">
+              <iframe class="patacon-animation-frame" src="assets/animations/ambient-vs-tangent.html?embed=1&amp;v=20261009-latex" title="Ambient space and tangent space projection comparison" width="960" height="460" loading="eager" allow="fullscreen" allowfullscreen></iframe>
+            </div>
+          </div>
+        </article>
+
+
+      </div>
+    </section>
+
+    <section id="method" class="section-pad soft-section">
+      <div class="container narrow center">
+        <p class="eyebrow">Method</p>
+        <h2 class="section-title">Explore locally. Validate in parallel.</h2>
+        <p class="lead">PATACON combines geometry-aware sampling with speculative multi-edge expansion so the overhead of tangent-space management can be amortized over useful GPU-parallel work.</p>
+      </div>
+
+      <div class="container stepper" aria-label="PATACON method components">
+        <div class="stepper-tabs" role="tablist" aria-label="Method components">
+          <button class="step-tab active" type="button" role="tab" aria-selected="true" data-step="1"><span>1</span>TGS</button>
+          <button class="step-tab" type="button" role="tab" aria-selected="false" data-step="2"><span>2</span>TGMP-EXTEND</button>
+          <button class="step-tab" type="button" role="tab" aria-selected="false" data-step="3"><span>3</span>TGMP-CONNECT</button>
+          <button class="step-tab" type="button" role="tab" aria-selected="false" data-step="4"><span>4</span>Parallel Projection &amp; Validation</button>
+        </div>
+
+        <article class="step-panel active" data-panel="1" role="tabpanel">
+          <div class="step-copy">
+            <div class="step-number">TGS</div>
+            <h3>Tangent-Guided Sampling</h3>
+            <p>Each CUDA block dynamically selects a ready tangent space from the bank of the current tree. A sample is generated inside that local tangent space, and the nearest-node search is restricted to nodes associated with the same tangent space.</p>
+            <p class="takeaway"><strong>Purpose:</strong> choose an expansion direction that reflects the local geometry of the constraint manifold.</p>
+          </div>
+          <div class="step-visual method-video-wrap patacon-animation-shell" data-animation="method-tgs-cropped" data-channel="patacon-diagram-animation" style="--animation-aspect:960/430">
+              <iframe class="patacon-animation-frame" src="assets/animations/method-tgs-cropped.html?embed=1&amp;v=20261009-latex" title="Tangent-Guided Sampling diagram" width="960" height="430" loading="eager" allow="fullscreen" allowfullscreen></iframe></div>
+        </article>
+
+        <article class="step-panel" data-panel="2" role="tabpanel" hidden>
+          <div class="step-copy">
+            <div class="step-number">TGMP-EXTEND</div>
+            <h3>Multi-Edge EXTEND</h3>
+            <p>TGMP reuses one tangent-space sampling and nearest-neighbor decision to generate an ordered batch of consecutive candidate edges along the same tangent direction. Candidate generation stops when the tangent-error threshold is crossed or the maximum batch size is reached.</p>
+            <p>After projection and validation, PATACON inserts only the longest consecutively valid prefix. If the first edge is invalid, EXTEND returns TRAPPED; otherwise, the final inserted node is returned for the next operation.</p>
+            <p class="takeaway"><strong>Key idea:</strong> reuse one exploration decision for multiple expansion steps instead of repeating sampling and nearest-neighbor search edge by edge.</p>
+          </div>
+          <div class="step-visual method-video-wrap patacon-animation-shell" data-animation="method-tgmp-extend" data-channel="patacon-diagram-animation" style="--animation-aspect:960/540">
+              <iframe class="patacon-animation-frame" src="assets/animations/method-tgmp-extend.html?embed=1&amp;v=20261009-latex" title="TGMP-EXTEND diagram" width="960" height="540" loading="eager" allow="fullscreen" allowfullscreen></iframe></div>
+        </article>
+
+        <article class="step-panel" data-panel="3" role="tabpanel" hidden>
+          <div class="step-copy">
+            <div class="step-number">TGMP-CONNECT</div>
+            <h3>Target-Directed CONNECT</h3>
+            <p>After an exploratory EXTEND succeeds, PATACON selects a fixed target in the opposite tree. The displacement toward that target is projected into the current local tangent space, and the same TGMP-based EXTEND procedure is repeatedly applied toward the fixed target.</p>
+            <p>When the two trees become sufficiently close, the remaining bridge is projected and validated before the path is accepted.</p>
+            <p class="takeaway"><strong>Key idea:</strong> use the same tangent-guided multi-edge machinery for both exploration and bidirectional connection.</p>
+          </div>
+          <div class="step-visual method-video-wrap patacon-animation-shell" data-animation="method-tgmp-connect" data-channel="patacon-diagram-animation" style="--animation-aspect:960/540">
+              <iframe class="patacon-animation-frame" src="assets/animations/method-tgmp-connect.html?embed=1&amp;v=20261009-latex" title="TGMP-CONNECT diagram" width="960" height="540" loading="eager" allow="fullscreen" allowfullscreen></iframe></div>
+        </article>
+
+        <article class="step-panel" data-panel="4" role="tabpanel" hidden>
+          <div class="step-copy">
+            <div class="step-number">GPU PARALLELISM</div>
+            <h3>Parallel Projection &amp; Validation</h3>
+            <p>Multiple candidate edges generated by TGMP are assigned to cooperative GPU thread groups and processed concurrently. Within each individual edge, waypoint projection remains sequential so that each projected waypoint provides the anchor for the next.</p>
+            <p>Projection convergence, joint limits, and collision constraints are checked before any candidate is inserted into the tree.</p>
+            <p class="takeaway"><strong>Parallel across edges, ordered within each edge.</strong></p>
+          </div>
+          <div class="step-visual method-video-wrap patacon-animation-shell" data-animation="method-parallel-projection" data-channel="patacon-diagram-animation" style="--animation-aspect:960/540">
+              <iframe class="patacon-animation-frame" src="assets/animations/method-parallel-projection.html?embed=1&amp;v=20261009-latex" title="Parallel Projection and Validation diagram" width="960" height="540" loading="eager" allow="fullscreen" allowfullscreen></iframe></div>
+        </article>
+      </div>
+
+    </section>
+
+    <section id="results" class="section-pad">
+      <div class="container narrow center">
+        <p class="eyebrow">Results</p>
+        <h2 class="section-title single-line-title">From 7-DoF manipulation to 35-DoF whole-body planning.</h2>
+        <p class="lead">The benchmark suite increases both configuration-space dimension and constraint restrictiveness. The clips below use the same task families shown in the presentation.</p>
+      </div>
+
+      <div class="container demo-grid four-up">
+        <article class="demo-card"><video class="loop-video" autoplay muted loop playsinline preload="metadata"><source src="assets/video/eval-franka.mp4" type="video/mp4"></video><div class="demo-meta"><h3>Franka Panda</h3><p>7 DoF · OR (2D)</p></div></article>
+        <article class="demo-card"><video class="loop-video" autoplay muted loop playsinline preload="metadata"><source src="assets/video/eval-dual.mp4" type="video/mp4"></video><div class="demo-meta"><h3>Dual Franka</h3><p>14 DoF · BK (6D)</p></div></article>
+        <article class="demo-card"><video class="loop-video" autoplay muted loop playsinline preload="metadata"><source src="assets/video/eval-dual-axis.mp4" type="video/mp4"></video><div class="demo-meta"><h3>Dual Franka + axis</h3><p>14 DoF · BK + OR (8D)</p></div></article>
+        <article class="demo-card"><video class="loop-video" autoplay muted loop playsinline preload="metadata"><source src="assets/video/eval-ffw-fixed.mp4" type="video/mp4"></video><div class="demo-meta"><h3>FFW-SG2 · fixed</h3><p>15 DoF · BK (6D)</p></div></article>
+        <article class="demo-card"><video class="loop-video" autoplay muted loop playsinline preload="metadata"><source src="assets/video/eval-ffw-fixed-axis.mp4" type="video/mp4"></video><div class="demo-meta"><h3>FFW-SG2 + axis</h3><p>15 DoF · BK + OR (8D)</p></div></article>
+        <article class="demo-card"><video class="loop-video" autoplay muted loop playsinline preload="metadata"><source src="assets/video/eval-ffw-mobile.mp4" type="video/mp4"></video><div class="demo-meta"><h3>FFW-SG2 · mobile</h3><p>18 DoF · BK + OR / CoM</p></div></article>
+        <article class="demo-card"><video class="loop-video" autoplay muted loop playsinline preload="metadata"><source src="assets/video/eval-g1.mp4" type="video/mp4"></video><div class="demo-meta"><h3>Unitree G1</h3><p>35 DoF · BK + FT / CoM</p></div></article>
+        <article class="demo-card"><video class="loop-video" autoplay muted loop playsinline preload="metadata"><source src="assets/video/eval-g1-axis.mp4" type="video/mp4"></video><div class="demo-meta"><h3>Unitree G1 + axis</h3><p>35 DoF · BK + OR + FT / CoM</p></div></article>
+      </div>
+
+
+    </section>
+
+    <section id="replanning" class="section-pad soft-section">
+      <div class="container narrow center">
+        <p class="eyebrow">Dynamic replanning</p>
+        <h2 class="section-title single-line-title">Planning latency matters when the world moves.</h2>
+        <p class="lead">In the presented Unitree G1 dynamic-obstacle comparison, the two planners are shown side by side under the same type of replanning scenario.</p>
+      </div>
+
+      <div class="container two-video-grid">
+        <article class="video-compare-card danger-card">
+          <div class="video-card-head"><div><span class="pill danger">cpRRTC</span><h3>Replanning failure</h3></div><strong>3.1 Hz</strong></div>
+          <video class="loop-video" autoplay muted loop playsinline preload="metadata"><source src="assets/video/dynamic-cprrtc.mp4" type="video/mp4"></video>
+          <p>Collision occurs before a successful replan is available.</p>
+        </article>
+        <article class="video-compare-card success-card">
+          <div class="video-card-head"><div><span class="pill success">PATACON</span><h3>Successful replanning</h3></div><strong>4.01 Hz</strong></div>
+          <video class="loop-video" autoplay muted loop playsinline preload="metadata"><source src="assets/video/dynamic-patacon.mp4" type="video/mp4"></video>
+          <p>The replanned motion avoids the moving obstacle in the demonstrated sequence.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="anytime" class="section-pad">
+      <div class="container narrow center">
+        <p class="eyebrow">AO-PATACON</p>
+        <h2 class="section-title single-line-title">Fast first solutions leave time for refinement.</h2>
+        <p class="lead">AO-PATACON restarts the search with a tighter cost bound whenever a lower-cost feasible solution is found, progressively improving the best-so-far path within the remaining budget.</p>
+      </div>
+      <div class="container anytime-grid">
+        <article class="anytime-card"><div class="card-topline"><span>Initial solution</span><strong>cost 10.59</strong></div><video class="loop-video" autoplay muted loop playsinline preload="metadata"><source src="assets/video/anytime-before.mp4" type="video/mp4"></video></article>
+        <div class="arrow-card" aria-hidden="true">→</div>
+        <article class="anytime-card"><div class="card-topline"><span>After 5 s</span><strong>cost 5.69225</strong></div><video class="loop-video" autoplay muted loop playsinline preload="metadata"><source src="assets/video/anytime-after.mp4" type="video/mp4"></video></article>
+      </div>
+    </section>
+
+    <section id="hardware" class="section-pad dark-section">
+      <div class="container narrow center on-dark">
+        <p class="eyebrow">Real-world demonstrations</p>
+        <h2 class="section-title single-line-title">Whole-Body Constrained Motion on a Real Robot</h2>
+        <p class="lead">Three real-robot clips from the presentation, covering different combinations of bimanual, axis, fixed-foot, and center-of-mass constraints.</p>
+      </div>
+      <div class="container hardware-grid">
+        <article class="hardware-card"><video class="loop-video portrait" autoplay muted loop playsinline preload="metadata"><source src="assets/video/real-g1-feet.mp4" type="video/mp4"></video><h3>G1 · Bimanual + Feet + CoM</h3></article>
+        <article class="hardware-card"><video class="loop-video portrait" autoplay muted loop playsinline preload="metadata"><source src="assets/video/real-g1-axis-feet.mp4" type="video/mp4"></video><h3>G1 · Bimanual + Axis + Feet + CoM</h3></article>
+        <article class="hardware-card"><video class="loop-video portrait" autoplay muted loop playsinline preload="metadata"><source src="assets/video/real-ffw-axis.mp4" type="video/mp4"></video><h3>FFW-SG2 · Bimanual + Axis + CoM</h3></article>
+      </div>
+    </section>
+
+    <section id="citation" class="section-pad citation-section">
+      <div class="container citation-grid">
+        <div>
+          <p class="eyebrow left">Citation</p>
+          <h2 class="section-title left-title">PATACON</h2>
+          <p class="citation-note">Update the venue and publication metadata when the final paper information is available.</p>
+          <div class="footer-links">
+            <a id="paperFooterLink" class="disabled-link" href="#" aria-disabled="true">Paper · arXiv soon</a>
+            <a href="#video">Paper video</a>
+            <a id="codeFooterLink" class="disabled-link" href="#" aria-disabled="true">Code · soon</a>
+          </div>
+        </div>
+        <div class="bib-wrap">
+          <button id="copyBib" class="copy-btn" type="button">Copy BibTeX</button>
+          <pre id="bibtex"><code>@inproceedings{patacon2027,
+  title  = {PATACON: GPU-Parallel Tangent-Bundle RRT-Connect for Constrained Motion Planning},
+  author = {Gahyun Oh and Junho An and Suhyun Jeon and Suhan Park},
+  year   = {2027}
+}</code></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <span>PATACON project page</span>
+      <span>Built as a lightweight static site for GitHub Pages.</span>
+    </div>
+  </footer>
+
+  <script src="assets/js/site-config.js"></script>
+  <script src="assets/js/main.js"></script>
+  <script src="assets/js/animations-embed.js?v=20261009-expand-back"></script>
+</body>
+</html>

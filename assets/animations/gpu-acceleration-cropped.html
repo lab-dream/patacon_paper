@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Configuration space, constraint manifold projection, and a sequential versus GPU-parallel processing comparison.">
+<title>GPU acceleration · PATACON</title>
+<style>
+:root{color-scheme:light;font-family:Arial,Helvetica,sans-serif;color:#172d3b;--aspect:960 / 460;--ctrl:62px}
+*{box-sizing:border-box}html,body{margin:0;background:#fff}body{min-height:100vh;display:grid;place-items:center;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit}button{-webkit-tap-highlight-color:transparent;cursor:pointer}.viewer{width:min(1500px,100%);position:relative;background:#fff}.scene{width:100%;aspect-ratio:var(--aspect);position:relative}.scene>svg{display:block;width:100%;height:100%;font-family:Arial,Helvetica,sans-serif}.controls{display:flex;align-items:center;gap:10px;min-height:var(--ctrl);padding:10px 18px;border-top:1px solid #e5edf2;color:#435f70;font-size:13px;background:#fff}
+button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:7px 10px;border:0;border-radius:7px;background:transparent;color:inherit;white-space:nowrap}button:hover{background:#eff5f8}button svg{width:17px;height:17px;flex:none}.primary{background:#edf4f8;color:#254f6d;min-width:90px}.primary:hover{background:#e0edf4}
+#timeline{flex:1;min-width:20px;accent-color:#457899;cursor:pointer;height:24px}#time{font-variant-numeric:tabular-nums;white-space:nowrap;font-size:12px}#speed{border:1px solid #dbe5ec;border-radius:6px;padding:6px 4px;background:white;color:#435f70}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #407ca7;outline-offset:3px}
+.mini-controls,.expand-hint{display:none}.embed body{height:100vh;min-height:0;overflow:hidden}.embed .viewer{width:100%}.embed:not(.expanded) .controls{display:none}.embed:not(.expanded) .scene>svg{cursor:zoom-in}.embed:not(.expanded) .mini-controls{display:flex;position:absolute;left:7px;bottom:5px;gap:2px;opacity:.5}.mini-controls:hover,.mini-controls:focus-within{opacity:1!important}.mini-controls button{min-height:24px;height:24px;width:26px;padding:4px;background:rgba(241,247,250,.95);border-radius:5px}.mini-controls svg{width:14px;height:14px}
+.embed:not(.expanded) .expand-hint{display:flex;position:absolute;right:8px;bottom:5px;min-height:25px;padding:5px 9px;color:#fff;background:rgba(21,47,63,.8);border-radius:20px;font-size:10px;gap:4px;cursor:zoom-in}.expand-hint svg{width:12px;height:12px}
+.viewer:fullscreen,.viewer.local-expanded,.expanded .viewer{width:100vw;height:100vh;max-width:none;display:flex;flex-direction:column;justify-content:center;align-items:center;background:#fff}.viewer.local-expanded{position:fixed;inset:0;z-index:10000}.expanded body{height:100vh;overflow:hidden}
+.viewer:fullscreen .scene,.viewer.local-expanded .scene,.expanded .scene{width:min(100vw,calc((100vh - var(--ctrl)) * var(--aspect)));flex-shrink:0}
+.viewer:fullscreen .controls,.viewer.local-expanded .controls,.expanded .controls{width:min(100vw,calc((100vh - var(--ctrl)) * var(--aspect)));flex-shrink:0}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+@media(max-width:600px){:root{--ctrl:56px}.controls{padding:7px;gap:3px}button{padding:6px;min-height:34px}.primary{min-width:34px}.label{display:none}#time{font-size:10px}#speed{font-size:11px;padding:5px 2px}.expand-hint{font-size:8px!important;padding:3px 6px!important}.mini-controls button{width:22px;height:21px;min-height:21px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<!-- LaTeX labels: pre-rendered MathJax SVG; no CDN or web-font dependency. -->
+<script src="../js/latex-equations.js?v=20261009-latex"></script>
+<script src="../js/latex-labels.js?v=20261009-latex"></script>
+</head>
+<body>
+<main id="viewer" class="viewer" aria-label="GPU acceleration">
+<div class="scene"><svg id="diagram" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 460" role="img" aria-labelledby="diagram-title diagram-description"><title id="diagram-title">GPU acceleration</title><desc id="diagram-description">Configuration space, constraint manifold projection, and a sequential versus GPU-parallel processing comparison. Illustrative reconstruction, not a running planner or measured execution trace.</desc></svg></div>
+<div class="controls" aria-label="Animation controls">
+<button id="pause" class="toggle-play primary" type="button"><svg class="symbol" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"></svg><span class="label">Pause</span></button>
+<button class="replay" type="button" aria-label="Replay animation"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7a6.5 6.5 0 1 1-.4 5M4 2v5h5"/></svg><span class="label">Replay</span></button>
+<label class="sr-only" for="timeline">Animation position</label><input id="timeline" type="range" min="0" max="1" step="0.01" value="0"><span id="time">0:00.0</span>
+<label class="sr-only" for="speed">Playback speed</label><select id="speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+<button class="enlarge" type="button" aria-label="Enlarge or close animation"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 8V3h5m4 0h5v5m0 4v5h-5m-4 0H3v-5"/></svg><span class="label expand-label">Enlarge</span></button>
+</div>
+<div class="mini-controls"><button class="toggle-play" type="button" aria-label="Pause animation"><svg class="symbol" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"></svg></button><button class="replay" type="button" aria-label="Replay animation"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7a6.5 6.5 0 1 1-.4 5M4 2v5h5"/></svg></button></div>
+<button class="expand-hint enlarge" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 8V3h5m4 0h5v5m0 4v5h-5m-4 0H3v-5"/></svg>Click to enlarge</button>
+</main>
+<script>
+const CONFIG={"id": "gpu-acceleration-cropped", "width": 960, "height": 460, "duration": 16.665, "title": "GPU acceleration"};
+'use strict';
+// Pure SVG scene construction. Coordinates are reconstructed illustration
+// keyframes, not output from a running planner or a constraint solver.
+const NS='http://www.w3.org/2000/svg';
+const $=id=>document.getElementById(id);
+const root=$('diagram');
+const clamp=(v,a=0,b=1)=>Math.min(b,Math.max(a,v));
+const ramp=(t,a,b)=>clamp((t-a)/(b-a));
+const ease=v=>v*v*(3-2*v);
+const phase=(t,a,b)=>ease(ramp(t,a,b));
+const mix=(a,b,v)=>a+(b-a)*v;
+const lerp=(a,b,v)=>a.map((x,i)=>mix(x,b[i],v));
+const xy=p=>p.map(v=>Number(v.toFixed(2))).join(' ');
+const pathData=ps=>'M'+ps.map(xy).join('L');
+function el(tag,attrs={},parent=root){const e=document.createElementNS(NS,tag); for(const [k,v] of Object.entries(attrs))e.setAttribute(k,String(v));if(parent)parent.appendChild(e);return e;}
+const group=(parent=root,attrs={})=>el('g',attrs,parent);
+const set=(e,a)=>{for(const [k,v] of Object.entries(a))e.setAttribute(k,String(v));};
+const op=(e,v)=>e.setAttribute('opacity',clamp(v).toFixed(3));
+function rect(g,x,y,w,h,fill='#fff',stroke='#17333f',r=0,sw=1){return el('rect',{x,y,width:w,height:h,rx:r,fill,stroke,'stroke-width':sw},g);}
+function line(g,a,b,color='#243747',w=1.5,dash='',marker=''){return el('path',{d:pathData([a,b]),fill:'none',stroke:color,'stroke-width':w,'stroke-dasharray':dash,'stroke-linecap':'round',...(marker?{'marker-end':`url(#${marker})`}:{})},g);}
+function poly(g,ps,fill,stroke='none',w=1){return el('path',{d:pathData(ps)+'Z',fill,stroke,'stroke-width':w},g);}
+function circle(g,x,y,r=4,fill='#f4c1a9',stroke='#273c48',w=1.2){return el('circle',{cx:x,cy:y,r,fill,stroke,'stroke-width':w},g);}
+function text(g,x,y,content,size=14,fill='#111',weight=400,anchor='start',extra={}){const n=el('text',{x,y,'font-size':size,fill,'font-weight':weight,'text-anchor':anchor,...extra},g);n.textContent=content;return n;}
+function lines(g,x,y,arr,size=14,fill='#111',weight=400,anchor='start',leading=1.25){return arr.map((s,i)=>text(g,x,y+i*size*leading,s,size,fill,weight,anchor));}
+// All diagram variables are built from LaTeX, not Unicode/tspan imitations.
+function latex(g,x,y,tex,size=16,fill='#111',anchor='start'){
+ return window.PataconLatex.render(g,x,y,tex,size,fill,anchor);
+}
+function math(g,x,y,base='q',sub='',size=16,fill='#111',anchor='start',bar=false){
+ return latex(g,x,y,window.PataconLatex.variable(base,sub,bar),size,fill,anchor);
+}
+function badge(g,x,y,label){const w=label.length*7+18;rect(g,x,y,w,22,'#fff5ed','#ad8b70',3,1);text(g,x+w/2,y+15,label,12,'#82387e',600,'middle');}
+function slideHeader(title,subtitle){const g=group();text(g,58,48,title,26,'#090c0e',700);if(subtitle)text(g,60,77,'•  '+subtitle,15,'#20272b');return g;}
+function arrowBlock(g,x,y,w=30,h=26){poly(g,[[x,y-h*.3],[x+w*.64,y-h*.3],[x+w*.64,y-h*.62],[x+w,y],[x+w*.64,y+h*.62],[x+w*.64,y+h*.3],[x,y+h*.3]],'#287291','#103b50',1.4);}
+function pointMove(n,a,b,v){const p=lerp(a,b,v);set(n,{cx:p[0],cy:p[1]});}
+function drawProgress(p,a,b,v){set(p,{d:pathData([a,lerp(a,b,v)])});op(p,v>0?1:0);}
+function show(g,t,a,b=.3){op(g,phase(t,a,a+b));}
+const defs=el('defs');
+const grad=el('linearGradient',{id:'surface-fill',x1:0,y1:-10,x2:0,y2:168,gradientUnits:'userSpaceOnUse'},defs);
+[['0%','#639abb',.9],['45%','#a1c7dc',.78],['82%','#e0ebf5',.64],['100%','#f9fbfd',.58]].forEach(([offset,color,alpha])=>el('stop',{offset,'stop-color':color,'stop-opacity':alpha},grad));
+const waveGrad=el('linearGradient',{id:'wave-fill',x1:0,y1:0,x2:0,y2:1},defs);
+[['0%','#8cbbd1'],['100%','#e9eef7']].forEach(([offset,color])=>el('stop',{offset,'stop-color':color},waveGrad));
+const COLORS={orange:'#c96c36',purple:'#9c3b99',green:'#91ee91',blue:'#4d8fc0',ink:'#172d3b',red:'#c33938'};
+for(const [id,c] of Object.entries({arrow:'#263844',purple:'#a1439c',orange:'#cf713c',red:'#ba3636',green:'#4e955e',blue:'#346783'})){
+ const m=el('marker',{id:id+'-arrow',viewBox:'0 0 10 10',refX:8.5,refY:5,markerWidth:6,markerHeight:6,orient:'auto-start-reverse',markerUnits:'userSpaceOnUse'},defs);poly(m,[[0,0],[10,5],[0,10]],c);
+}
+function buildDome(){
+ const g=group(defs,{id:'dome-surface'}), width=128, height=151;
+ el('path',{
+   d:`M -${width} 96 C -121 58 -90 18 0 2 C 90 18 121 58 ${width} 96 C 102 126 60 147 0 ${height} C -60 147 -102 126 -${width} 96 Z`,
+   fill:'url(#surface-fill)'
+ },g);
+ for(let i=1;i<=8;i++){
+   const u=i/9, y=18 + 110*u, half=118*Math.sqrt(Math.max(.02,1-((y-78)/82)**2)), lift=6+4*(1-u);
+   el('path',{d:`M ${-half} ${y} C ${-half*.45} ${y-lift} ${half*.45} ${y-lift} ${half} ${y}`,fill:'none',stroke:'#739bc0','stroke-width':.55,'stroke-opacity':.28},g);
+ }
+ for(let i=-4;i<=4;i++){
+   const x=25*i;
+   el('path',{d:`M ${x} 11 C ${x*.90} 42 ${x*.56} 83 ${x*.32} 146`,fill:'none',stroke:'#739bc0','stroke-width':.55,'stroke-opacity':.24},g);
+ }
+}
+buildDome();
+function dome(g,x,y,s=1){return el('use',{href:'#dome-surface',transform:`translate(${x} ${y}) scale(${s})`},g);}
+function tangent(g,x,y,s=1,angle=0,alpha=.6){const p=group(g,{transform:`translate(${x} ${y}) rotate(${angle}) scale(${s})`});poly(p,[[-98,-24],[136,-24],[115,21],[-119,21]],COLORS.green);op(p,alpha);return p;}
+function ribbon(g,x0,x1,fn,width=22){
+ const xs=Array.from({length:101},(_,i)=>mix(x0,x1,i/100));const outline=[...xs.map(x=>[x,fn(x)-width*.5]),...xs.slice().reverse().map(x=>[x-16,fn(x)+width*.5])];poly(g,outline,'url(#wave-fill)');
+ const grid=group(g,{'fill':'none','stroke':'#8bb1d1','stroke-width':.55,'stroke-opacity':.35});
+ for(let i=1;i<60;i++){const x=mix(x0,x1,i/60);line(grid,[x,fn(x)-width*.5],[x-16,fn(x)+width*.5],'#90b1d1',.5);}
+ for(let j=1;j<9;j++){const u=j/9;el('path',{d:pathData(xs.map(x=>[x-16*u,fn(x)+width*(u-.5)])),fill:'none',stroke:'#92b3d0','stroke-width':.5},grid);}
+}
+function planeAlong(g,a,b,width=32){const off=[-10,width];poly(g,[[a[0]+10,a[1]-width*.5],[b[0]+10,b[1]-width*.5],[b[0]+off[0],b[1]+width*.5],[a[0]+off[0],a[1]+width*.5]],'#96eb94');op(g,.6);}
+function seeded(seed=7){return()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};}
+function cube(g,cx,cy,s=70,surface=false){
+ const pr=(x,y,z)=>[cx+s*(.66*x+.52*y),cy+s*(-.25*x+.30*y-.90*z)];
+ const corners=[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+ const back=group(g);for(const [i,j] of [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]])line(back,pr(...corners[i]),pr(...corners[j]),'#8a9095',.75);
+ for(let a=-.75;a<1;a+=.25){line(back,pr(a,-1,-1),pr(a,1,-1),'#dadde0',.45);line(back,pr(-1,a,-1),pr(1,a,-1),'#dadde0',.45);line(back,pr(-1,-1,a),pr(1,-1,a),'#dadddf',.45);line(back,pr(a,-1,-1),pr(a,-1,1),'#dadddf',.45);}
+ if(surface){
+  const f=(x,y)=>0.24*(1-0.58*x*x-0.92*y*y)+0.045*Math.sin(2.1*x-0.7*y)-0.03*x;
+  const shade=v=>{v=clamp(v);const a=[58,126,171],b=[183,219,231];return 'rgb('+a.map((a,i)=>Math.round(mix(a,b[i],v))).join(',')+')';};
+  for(let j=0;j<24;j++)for(let i=0;i<24;i++){
+   const x=-1+2*i/24,y=-1+2*j/24,dx=2/24,ps=[[x,y],[x+dx,y],[x+dx,y+dx],[x,y+dx]].map(([u,v])=>pr(u,v,f(u,v)));
+   const tone=(x+y+2)/4;
+   poly(g,ps,shade(tone),shade(tone),.28);
+  }
+ }else{let rand=seeded(19);for(let i=0;i<90;i++){const p=pr(rand()*1.9-.95,rand()*1.9-.95,rand()*1.9-.95);circle(g,p[0],p[1],.65,'#899196','none');}}
+ math(g,cx-s*.8,cy+s*1.6,'q','1',13);math(g,cx+s*.9,cy+s*1.6,'q','2',13);math(g,cx-s*1.4,cy+s*.2,'q','3',13);
+ return pr;
+}
+
+// Configuration space -> constraint manifold -> projection -> synchronized
+// sequential / GPU-parallel comparison. Schematic durations only.
+const joint=group();
+latex(joint,130,91,String.raw`\textsf{Joint space }\mathcal{C}\subset\mathbb{R}^{n}`,15,'#101010','middle');
+cube(joint,126,224,64,false);
+text(joint,133,350,'[High-dimensional configuration space]',11.7,'#111',400,'middle');
+const manifold=group();
+latex(manifold,357,84,String.raw`\textsf{Constraint manifold }\mathcal{M}`,14.5,'#111','middle');
+latex(manifold,357,105,String.raw`\mathcal{M}=\{q\in\mathcal{C}\mid h(q)=0\}`,14,'#111','middle');
+const pr=cube(manifold,351,224,64,true);
+text(manifold,359,350,'[Lower-dimensional manifold]',11.7,'#111',400,'middle');
+line(manifold,[219,212],[263,212],'#111',1.5,'','arrow-arrow');
+latex(manifold,241,204,String.raw`h(q)=0`,12,'#111','middle');
+const projected=group(manifold);const ps=[368,153],pt=[368,197];
+const projectArrow=line(projected,ps,pt,COLORS.purple,1.2,'3 2','purple-arrow');
+const projectNode=circle(projected,ps[0],ps[1],4.3,'#e7f9dc');
+text(projected,377,169,'Projection',11.2,'#8e248d');
+const leftCaption=group();text(leftCaption,242,391,'Projection is needed to satisfy kinematic constraints',14,'#1680aa',500,'middle');
+const chart=group();rect(chart,485,30,449,392,'#fff','#12303c',0,1.4);
+text(chart,507,58,'Line candidate',11.8,'#111',600);
+line(chart,[600,53],[857,53],'#111',1.5);
+[[600,'near'],[686,'1'],[771,'2'],[857,'3']].forEach(([x,sub],i)=>{circle(chart,x,53,5.5,i?'#f6bea5':'#929999',i?'#b55b2d':'#111',1.2);math(chart,x,77,'q',sub,15,'#111','middle');});
+const lanes=group(chart);
+rect(lanes,502,102,415,73,'#f1d9f0','#163945',8,1.5);rect(lanes,502,185,415,151,'#e5f7da','#163945',8,1.5);
+rect(lanes,511,125,91,25,'#ddd','#111',5,1.3);text(lanes,556.5,142,'Sequential',11.2,'#111',700,'middle');
+rect(lanes,511,240,91,25,'#c9e9f3','#111',5,1.3);text(lanes,556.5,257,'GPU parallel',10.8,'#111',700,'middle');
+line(lanes,[622,119],[906,119],'#111',1.3,'','arrow-arrow');text(lanes,892,114,'Time',10.8,'#111',500,'end');
+line(lanes,[622,202],[906,202],'#111',1.3,'','arrow-arrow');text(lanes,892,196,'Time',10.8,'#111',500,'end');
+const gpuRegion=rect(lanes,622,208,210,94,'#d9e9f5','#163945',8,1.4);set(gpuRegion,{'stroke-dasharray':'5 4'});text(lanes,632,223,'CUDA block · GPU threads',11.0,'#27536d',700);
+const bracket=(g,x,y,w,label)=>{line(g,[x,y],[x+w,y],'#111',1.15);line(g,[x,y-5],[x,y+5],'#111',1.15);line(g,[x+w,y-5],[x+w,y+5],'#111',1.15);text(g,x+w/2,y+13,label,9.6,'#111',400,'middle');};
+bracket(lanes,622,153,272,'Total processing time (sequential)');bracket(lanes,622,313,210,'Total processing time (parallel)');
+rect(lanes,502,342,415,19,'#fff','#172d3b',3,1.2);text(lanes,709,355,'Each bar = Projection → Check validation',9.9,'#111',400,'middle');
+const bars1=[],bars2=[],durations=[.7,1.08,.61],widths=[80,122,70];let x=622;
+for(let i=0;i<3;i++){
+ const g=group(lanes);const r=rect(g,x,124,widths[i],17,'#d9d9d9','#111',0,1.4);math(g,x+widths[i]/2,135.2,'q',String(i+1),10.5,'#111','middle');bars1.push({g,r,w:widths[i]});x+=widths[i];
+ const h=group(lanes);const r2=rect(h,630,231+i*23,widths[i],17,'#d9d9d9','#111',0,1.4);math(h,630+widths[i]/2,242.2+i*23,'q',String(i+1),10.5,'#111','middle');bars2.push({g:h,r:r2,w:widths[i]});
+}
+const rightCaption=group(chart);text(rightCaption,709,393,'Parallel waypoint processing → Reduced total processing time',13.1,'#ab1621',500,'middle');
+// Both rows start from the same animation time. Per-task durations and
+// the sequential row's inter-task gaps remain unchanged.
+const COMPARISON_START = 9.7;
+function renderScene(t){
+ op(joint,1);show(manifold,t,2.35,.45);show(projected,t,4.65,.3);
+ pointMove(projectNode,ps,pt,phase(t,5.0,5.75));drawProgress(projectArrow,ps,pt,phase(t,4.9,5.75));
+ show(leftCaption,t,5.7,.5);show(chart,t,6.75,.4);show(lanes,t,8.35,.4);
+ let start=COMPARISON_START;bars1.forEach((b,i)=>{const u=phase(t,start,start+durations[i]);op(b.g,u>0?1:0);set(b.r,{width:Math.max(.001,b.w*u)});op(b.g.lastChild,u>.93?1:0);start+=durations[i]+.12;});
+ bars2.forEach((b,i)=>{const u=phase(t,COMPARISON_START,COMPARISON_START+durations[i]);op(b.g,u>0?1:0);set(b.r,{width:Math.max(.001,b.w*u)});op(b.g.lastChild,u>.93?1:0);});
+ show(rightCaption,t,14.05,.4);
+}
+
+// Deterministic, seekable SVG timeline. No video, frame-sequence, or network dependency.
+const duration=CONFIG.duration,channel='patacon-diagram-animation';
+const embedded=new URLSearchParams(location.search).get('embed')==='1';
+const parented=embedded&&window.parent!==window;
+const parentOrigin=(location.protocol==='file:'||location.origin==='null')?'*':location.origin;
+const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
+let time=reduced.matches?duration-.45:0,playing=!reduced.matches,speed=1,visible=true,expanded=false,raf=0,previous=0;
+const viewer=$('viewer'),slider=$('timeline');slider.max=duration;
+if(embedded)document.documentElement.classList.add('embed');
+function timeLabel(n){return Math.floor(n/60)+':'+(n%60).toFixed(1).padStart(4,'0');}
+function render(){renderScene(time);root.dataset.time=time.toFixed(3);slider.value=time.toFixed(3);slider.setAttribute('aria-valuetext',`${time.toFixed(1)} of ${duration.toFixed(1)} seconds`);$('time').textContent=timeLabel(time)+' / '+timeLabel(duration);}
+function canRun(){return playing&&visible&&!document.hidden;}
+function tick(now){raf=0;if(!canRun()){previous=0;return;}if(previous)time=(time+Math.min(.12,(now-previous)/1000)*speed)%duration;previous=now;render();raf=requestAnimationFrame(tick);}
+function schedule(){previous=0;if(raf)cancelAnimationFrame(raf);raf=canRun()?requestAnimationFrame(tick):0;}
+function buttons(){document.querySelectorAll('.toggle-play').forEach(b=>{b.setAttribute('aria-label',playing?'Pause animation':'Play animation');b.querySelector('.symbol').innerHTML=playing?'<rect x="5" y="4" width="3.5" height="12" rx=".5"/><rect x="11.5" y="4" width="3.5" height="12" rx=".5"/>':'<path d="M6 3.5v13l10-6.5z"/>';const s=b.querySelector('.label');if(s)s.textContent=playing?'Pause':'Play';});document.querySelectorAll('.expand-label').forEach(b=>b.textContent=expanded?'Close':'Enlarge');}
+function play(){playing=true;buttons();schedule();}function pause(){playing=false;buttons();schedule();}function replay(){time=0;render();play();}function toggle(){playing?pause():play();}
+function seek(v,pauseAfter=false){v=Number(v);if(!Number.isFinite(v))return;time=clamp(v,0,duration-.001);previous=0;if(pauseAfter)pause();render();}
+function setSpeed(v){v=Number(v);if(!Number.isFinite(v)||v<=0)return;speed=clamp(v,.1,4);previous=0;const s=$('speed');if([...s.options].some(o=>Number(o.value)===speed))s.value=String(speed);}
+function post(type,extra={}){if(parented)window.parent.postMessage({channel,type,...extra},parentOrigin);}
+function setExpanded(v){expanded=!!v;document.documentElement.classList.toggle('expanded',expanded);buttons();if(expanded){visible=true;$('pause').focus({preventScroll:true});schedule();}}
+async function enlarge(){if(parented){post('toggle-expand');return;}if(document.fullscreenElement){try{await document.exitFullscreen();}catch{}return;}if(viewer.classList.contains('local-expanded')){viewer.classList.remove('local-expanded');setExpanded(false);return;}try{if(!viewer.requestFullscreen)throw new Error();await viewer.requestFullscreen();}catch{viewer.classList.add('local-expanded');setExpanded(true);}}
+for(const b of document.querySelectorAll('.toggle-play'))b.addEventListener('click',toggle);
+for(const b of document.querySelectorAll('.replay'))b.addEventListener('click',replay);
+for(const b of document.querySelectorAll('.enlarge'))b.addEventListener('click',enlarge);
+slider.addEventListener('input',()=>seek(slider.value));$('speed').addEventListener('change',e=>setSpeed(e.target.value));
+root.addEventListener('click',()=>{if(embedded&&!expanded)enlarge();});
+document.addEventListener('fullscreenchange',()=>setExpanded(!!document.fullscreenElement));document.addEventListener('visibilitychange',schedule);
+document.addEventListener('keydown',e=>{
+ if(expanded&&e.key==='Tab'){const cs=[...document.querySelectorAll('.controls button,.controls input,.controls select')],first=cs[0],last=cs.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}return;}
+ if(e.key==='Escape'&&expanded){if(parented)post('close-expand');else if(viewer.classList.contains('local-expanded')){viewer.classList.remove('local-expanded');setExpanded(false);}return;}
+ if(e.target.closest('input,select,button,a,textarea')||e.ctrlKey||e.metaKey||e.altKey)return;
+ if(e.code==='Space'){e.preventDefault();toggle();}else if(e.key.toLowerCase()==='r')replay();else if(e.key.toLowerCase()==='f')enlarge();else if(e.key==='ArrowLeft'){e.preventDefault();seek(time-.5);}else if(e.key==='ArrowRight'){e.preventDefault();seek(time+.5);}else if(e.key==='Home'){e.preventDefault();seek(0);}
+});
+window.addEventListener('message',e=>{if(!parented||e.source!==window.parent||(location.protocol!=='file:'&&location.origin!=='null'&&e.origin!==location.origin))return;const m=e.data;if(!m||m.channel!==channel)return;if(m.type==='visibility'){visible=!!m.visible;schedule();}else if(m.type==='expanded')setExpanded(m.expanded);else if(m.type==='restart')replay();else if(m.type==='seek')seek(m.time,true);});
+window.PATACON_ANIMATION=Object.freeze({play,pause,replay,seek,setSpeed,duration,get state(){return{time,playing,speed,visible,expanded};}});
+buttons();render();schedule();post('ready');
+
+</script>
+</body>
+</html>

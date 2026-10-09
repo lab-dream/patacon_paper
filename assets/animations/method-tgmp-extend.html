@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Generate an ordered tangent-space candidate batch, stop at a tangent-error or batch-size limit, project candidates concurrently, and insert the valid prefix.">
+<title>TGMP-EXTEND · PATACON</title>
+<style>
+:root{color-scheme:light;font-family:Arial,Helvetica,sans-serif;color:#172d3b;--aspect:960 / 540;--ctrl:62px}
+*{box-sizing:border-box}html,body{margin:0;background:#fff}body{min-height:100vh;display:grid;place-items:center;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit}button{-webkit-tap-highlight-color:transparent;cursor:pointer}.viewer{width:min(1500px,100%);position:relative;background:#fff}.scene{width:100%;aspect-ratio:var(--aspect);position:relative}.scene>svg{display:block;width:100%;height:100%;font-family:Arial,Helvetica,sans-serif}.controls{display:flex;align-items:center;gap:10px;min-height:var(--ctrl);padding:10px 18px;border-top:1px solid #e5edf2;color:#435f70;font-size:13px;background:#fff}
+button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:7px 10px;border:0;border-radius:7px;background:transparent;color:inherit;white-space:nowrap}button:hover{background:#eff5f8}button svg{width:17px;height:17px;flex:none}.primary{background:#edf4f8;color:#254f6d;min-width:90px}.primary:hover{background:#e0edf4}
+#timeline{flex:1;min-width:20px;accent-color:#457899;cursor:pointer;height:24px}#time{font-variant-numeric:tabular-nums;white-space:nowrap;font-size:12px}#speed{border:1px solid #dbe5ec;border-radius:6px;padding:6px 4px;background:white;color:#435f70}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #407ca7;outline-offset:3px}
+.mini-controls,.expand-hint{display:none}.embed body{height:100vh;min-height:0;overflow:hidden}.embed .viewer{width:100%}.embed:not(.expanded) .controls{display:none}.embed:not(.expanded) .scene>svg{cursor:zoom-in}.embed:not(.expanded) .mini-controls{display:flex;position:absolute;left:7px;bottom:5px;gap:2px;opacity:.5}.mini-controls:hover,.mini-controls:focus-within{opacity:1!important}.mini-controls button{min-height:24px;height:24px;width:26px;padding:4px;background:rgba(241,247,250,.95);border-radius:5px}.mini-controls svg{width:14px;height:14px}
+.embed:not(.expanded) .expand-hint{display:flex;position:absolute;right:8px;bottom:5px;min-height:25px;padding:5px 9px;color:#fff;background:rgba(21,47,63,.8);border-radius:20px;font-size:10px;gap:4px;cursor:zoom-in}.expand-hint svg{width:12px;height:12px}
+.viewer:fullscreen,.viewer.local-expanded,.expanded .viewer{width:100vw;height:100vh;max-width:none;display:flex;flex-direction:column;justify-content:center;align-items:center;background:#fff}.viewer.local-expanded{position:fixed;inset:0;z-index:10000}.expanded body{height:100vh;overflow:hidden}
+.viewer:fullscreen .scene,.viewer.local-expanded .scene,.expanded .scene{width:min(100vw,calc((100vh - var(--ctrl)) * var(--aspect)));flex-shrink:0}
+.viewer:fullscreen .controls,.viewer.local-expanded .controls,.expanded .controls{width:min(100vw,calc((100vh - var(--ctrl)) * var(--aspect)));flex-shrink:0}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+@media(max-width:600px){:root{--ctrl:56px}.controls{padding:7px;gap:3px}button{padding:6px;min-height:34px}.primary{min-width:34px}.label{display:none}#time{font-size:10px}#speed{font-size:11px;padding:5px 2px}.expand-hint{font-size:8px!important;padding:3px 6px!important}.mini-controls button{width:22px;height:21px;min-height:21px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<!-- LaTeX labels: pre-rendered MathJax SVG; no CDN or web-font dependency. -->
+<script src="../js/latex-equations.js?v=20261009-latex"></script>
+<script src="../js/latex-labels.js?v=20261009-latex"></script>
+</head>
+<body>
+<main id="viewer" class="viewer" aria-label="TGMP-EXTEND">
+<div class="scene"><svg id="diagram" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-labelledby="diagram-title diagram-description"><title id="diagram-title">TGMP-EXTEND</title><desc id="diagram-description">Generate an ordered tangent-space candidate batch, stop at a tangent-error or batch-size limit, project candidates concurrently, and insert the valid prefix. Illustrative reconstruction, not a running planner or measured execution trace.</desc></svg></div>
+<div class="controls" aria-label="Animation controls">
+<button id="pause" class="toggle-play primary" type="button"><svg class="symbol" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"></svg><span class="label">Pause</span></button>
+<button class="replay" type="button" aria-label="Replay animation"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7a6.5 6.5 0 1 1-.4 5M4 2v5h5"/></svg><span class="label">Replay</span></button>
+<label class="sr-only" for="timeline">Animation position</label><input id="timeline" type="range" min="0" max="1" step="0.01" value="0"><span id="time">0:00.0</span>
+<label class="sr-only" for="speed">Playback speed</label><select id="speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+<button class="enlarge" type="button" aria-label="Enlarge or close animation"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 8V3h5m4 0h5v5m0 4v5h-5m-4 0H3v-5"/></svg><span class="label expand-label">Enlarge</span></button>
+</div>
+<div class="mini-controls"><button class="toggle-play" type="button" aria-label="Pause animation"><svg class="symbol" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"></svg></button><button class="replay" type="button" aria-label="Replay animation"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7a6.5 6.5 0 1 1-.4 5M4 2v5h5"/></svg></button></div>
+<button class="expand-hint enlarge" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 8V3h5m4 0h5v5m0 4v5h-5m-4 0H3v-5"/></svg>Click to enlarge</button>
+</main>
+<script>
+const CONFIG={"id": "method-tgmp-extend", "width": 960, "height": 540, "duration": 6.4683, "title": "TGMP-EXTEND"};
+'use strict';
+// Pure SVG scene construction. Coordinates are reconstructed illustration
+// keyframes, not output from a running planner or a constraint solver.
+const NS='http://www.w3.org/2000/svg';
+const $=id=>document.getElementById(id);
+const root=$('diagram');
+const clamp=(v,a=0,b=1)=>Math.min(b,Math.max(a,v));
+const ramp=(t,a,b)=>clamp((t-a)/(b-a));
+const ease=v=>v*v*(3-2*v);
+const phase=(t,a,b)=>ease(ramp(t,a,b));
+const mix=(a,b,v)=>a+(b-a)*v;
+const lerp=(a,b,v)=>a.map((x,i)=>mix(x,b[i],v));
+const xy=p=>p.map(v=>Number(v.toFixed(2))).join(' ');
+const pathData=ps=>'M'+ps.map(xy).join('L');
+function el(tag,attrs={},parent=root){const e=document.createElementNS(NS,tag); for(const [k,v] of Object.entries(attrs))e.setAttribute(k,String(v));if(parent)parent.appendChild(e);return e;}
+const group=(parent=root,attrs={})=>el('g',attrs,parent);
+const set=(e,a)=>{for(const [k,v] of Object.entries(a))e.setAttribute(k,String(v));};
+const op=(e,v)=>e.setAttribute('opacity',clamp(v).toFixed(3));
+function rect(g,x,y,w,h,fill='#fff',stroke='#17333f',r=0,sw=1){return el('rect',{x,y,width:w,height:h,rx:r,fill,stroke,'stroke-width':sw},g);}
+function line(g,a,b,color='#243747',w=1.5,dash='',marker=''){return el('path',{d:pathData([a,b]),fill:'none',stroke:color,'stroke-width':w,'stroke-dasharray':dash,'stroke-linecap':'round',...(marker?{'marker-end':`url(#${marker})`}:{})},g);}
+function poly(g,ps,fill,stroke='none',w=1){return el('path',{d:pathData(ps)+'Z',fill,stroke,'stroke-width':w},g);}
+function circle(g,x,y,r=4,fill='#f4c1a9',stroke='#273c48',w=1.2){return el('circle',{cx:x,cy:y,r,fill,stroke,'stroke-width':w},g);}
+function text(g,x,y,content,size=14,fill='#111',weight=400,anchor='start',extra={}){const n=el('text',{x,y,'font-size':size,fill,'font-weight':weight,'text-anchor':anchor,...extra},g);n.textContent=content;return n;}
+function lines(g,x,y,arr,size=14,fill='#111',weight=400,anchor='start',leading=1.25){return arr.map((s,i)=>text(g,x,y+i*size*leading,s,size,fill,weight,anchor));}
+// All diagram variables are built from LaTeX, not Unicode/tspan imitations.
+function latex(g,x,y,tex,size=16,fill='#111',anchor='start'){
+ return window.PataconLatex.render(g,x,y,tex,size,fill,anchor);
+}
+function math(g,x,y,base='q',sub='',size=16,fill='#111',anchor='start',bar=false){
+ return latex(g,x,y,window.PataconLatex.variable(base,sub,bar),size,fill,anchor);
+}
+function badge(g,x,y,label){const w=label.length*7+18;rect(g,x,y,w,22,'#fff5ed','#ad8b70',3,1);text(g,x+w/2,y+15,label,12,'#82387e',600,'middle');}
+function slideHeader(title,subtitle){const g=group();text(g,58,48,title,26,'#090c0e',700);if(subtitle)text(g,60,77,'•  '+subtitle,15,'#20272b');return g;}
+function arrowBlock(g,x,y,w=30,h=26){poly(g,[[x,y-h*.3],[x+w*.64,y-h*.3],[x+w*.64,y-h*.62],[x+w,y],[x+w*.64,y+h*.62],[x+w*.64,y+h*.3],[x,y+h*.3]],'#287291','#103b50',1.4);}
+function pointMove(n,a,b,v){const p=lerp(a,b,v);set(n,{cx:p[0],cy:p[1]});}
+function drawProgress(p,a,b,v){set(p,{d:pathData([a,lerp(a,b,v)])});op(p,v>0?1:0);}
+function show(g,t,a,b=.3){op(g,phase(t,a,a+b));}
+const defs=el('defs');
+const grad=el('linearGradient',{id:'surface-fill',x1:0,y1:-10,x2:0,y2:168,gradientUnits:'userSpaceOnUse'},defs);
+[['0%','#639abb',.9],['45%','#a1c7dc',.78],['82%','#e0ebf5',.64],['100%','#f9fbfd',.58]].forEach(([offset,color,alpha])=>el('stop',{offset,'stop-color':color,'stop-opacity':alpha},grad));
+const waveGrad=el('linearGradient',{id:'wave-fill',x1:0,y1:0,x2:0,y2:1},defs);
+[['0%','#8cbbd1'],['100%','#e9eef7']].forEach(([offset,color])=>el('stop',{offset,'stop-color':color},waveGrad));
+const COLORS={orange:'#c96c36',purple:'#9c3b99',green:'#91ee91',blue:'#4d8fc0',ink:'#172d3b',red:'#c33938'};
+for(const [id,c] of Object.entries({arrow:'#263844',purple:'#a1439c',orange:'#cf713c',red:'#ba3636',green:'#4e955e',blue:'#346783'})){
+ const m=el('marker',{id:id+'-arrow',viewBox:'0 0 10 10',refX:8.5,refY:5,markerWidth:6,markerHeight:6,orient:'auto-start-reverse',markerUnits:'userSpaceOnUse'},defs);poly(m,[[0,0],[10,5],[0,10]],c);
+}
+function buildDome(){
+ const g=group(defs,{id:'dome-surface'}),R=2.3,rad=1.65;
+ const p=(u,v)=>[95*(u-v)/Math.SQRT2,16*(u+v)/Math.SQRT2+183*(R-Math.sqrt(Math.max(0,R*R-u*u-v*v)))];
+ const pts=[];for(let j=0;j<=24;j++){let r=rad*j/24;for(let i=0;i<120;i++){let a=i*Math.PI*2/120;pts.push(p(r*Math.cos(a),r*Math.sin(a)));}}
+ pts.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);const cross=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);let lo=[],hi=[];
+ for(const q of pts){while(lo.length>1&&cross(lo.at(-2),lo.at(-1),q)<=0)lo.pop();lo.push(q);}for(let i=pts.length-1;i>=0;i--){let q=pts[i];while(hi.length>1&&cross(hi.at(-2),hi.at(-1),q)<=0)hi.pop();hi.push(q);}poly(g,lo.slice(0,-1).concat(hi.slice(0,-1)),'url(#surface-fill)');
+ for(let ax=0;ax<2;ax++)for(let i=1;i<38;i++){const a=-rad+2*rad*i/38,span=Math.sqrt(rad*rad-a*a),ps=[];for(let j=0;j<=65;j++){const b=-span+2*span*j/65;ps.push(ax?p(b,a):p(a,b));}el('path',{d:pathData(ps),fill:'none',stroke:'#739bc0','stroke-width':.5,'stroke-opacity':.27},g);}
+}
+buildDome();
+function dome(g,x,y,s=1){return el('use',{href:'#dome-surface',transform:`translate(${x} ${y}) scale(${s})`},g);}
+function tangent(g,x,y,s=1,angle=0,alpha=.6){const p=group(g,{transform:`translate(${x} ${y}) rotate(${angle}) scale(${s})`});poly(p,[[-98,-24],[136,-24],[115,21],[-119,21]],COLORS.green);op(p,alpha);return p;}
+function ribbon(g,x0,x1,fn,width=22){
+ const xs=Array.from({length:101},(_,i)=>mix(x0,x1,i/100));const outline=[...xs.map(x=>[x,fn(x)-width*.5]),...xs.slice().reverse().map(x=>[x-16,fn(x)+width*.5])];poly(g,outline,'url(#wave-fill)');
+ const grid=group(g,{'fill':'none','stroke':'#8bb1d1','stroke-width':.55,'stroke-opacity':.35});
+ for(let i=1;i<60;i++){const x=mix(x0,x1,i/60);line(grid,[x,fn(x)-width*.5],[x-16,fn(x)+width*.5],'#90b1d1',.5);}
+ for(let j=1;j<9;j++){const u=j/9;el('path',{d:pathData(xs.map(x=>[x-16*u,fn(x)+width*(u-.5)])),fill:'none',stroke:'#92b3d0','stroke-width':.5},grid);}
+}
+function planeAlong(g,a,b,width=32){const off=[-10,width];poly(g,[[a[0]+10,a[1]-width*.5],[b[0]+10,b[1]-width*.5],[b[0]+off[0],b[1]+width*.5],[a[0]+off[0],a[1]+width*.5]],'#96eb94');op(g,.6);}
+function seeded(seed=7){return()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};}
+function cube(g,cx,cy,s=70,surface=false){
+ const pr=(x,y,z)=>[cx+s*(.66*x+.52*y),cy+s*(-.25*x+.30*y-.90*z)];
+ const corners=[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+ const back=group(g);for(const [i,j] of [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]])line(back,pr(...corners[i]),pr(...corners[j]),'#8a9095',.75);
+ for(let a=-.75;a<1;a+=.25){line(back,pr(a,-1,-1),pr(a,1,-1),'#dadde0',.45);line(back,pr(-1,a,-1),pr(1,a,-1),'#dadde0',.45);line(back,pr(-1,-1,a),pr(1,-1,a),'#dadddf',.45);line(back,pr(a,-1,-1),pr(a,-1,1),'#dadddf',.45);}
+ if(surface){
+  const f=(x,y)=>.35*Math.cos(2*x)+.27*Math.cos(2.5*y)-.2*x;
+  const shade=v=>{v=clamp(v);const a=[51,119,164],b=[176,213,225];return 'rgb('+a.map((a,i)=>Math.round(mix(a,b[i],v))).join(',')+')';};
+  for(let j=0;j<23;j++)for(let i=0;i<23;i++){const x=-1+2*i/23,y=-1+2*j/23,dx=2/23,ps=[[x,y],[x+dx,y],[x+dx,y+dx],[x,y+dx]].map(([u,v])=>pr(u,v,f(u,v)));poly(g,ps,shade((x+y+2)/4),shade((x+y+2)/4),.3);}
+ }else{let rand=seeded(19);for(let i=0;i<90;i++){const p=pr(rand()*1.9-.95,rand()*1.9-.95,rand()*1.9-.95);circle(g,p[0],p[1],.65,'#899196','none');}}
+ math(g,cx-s*.8,cy+s*1.6,'q','1',13);math(g,cx+s*.9,cy+s*1.6,'q','2',13);math(g,cx-s*1.4,cy+s*.2,'q','3',13);
+ return pr;
+}
+
+slideHeader('Tangent-Guided Multi-Edge Projection (TGMP)','Reuse one exploration decision to generate multiple consecutive candidate edges');
+badge(root,62,108,'EXTEND');
+const shape=group();
+const f=x=>245-38*Math.cos((x-195)*2*Math.PI/500);
+ribbon(shape,87,575,f,29);
+latex(shape,561,323,String.raw`\textsf{Constraint manifold }\mathcal{M}`,12,'#415c73','end');
+// Fixed back-to-front order for every stage: planes -> lines -> nodes.
+const extendPlaneLayer=group(root,{'data-layer':'extend-tangent-spaces'});
+const extendLineLayer=group(root,{'data-layer':'extend-lines'});
+const extendNodeLayer=group(root,{'data-layer':'extend-nodes'});
+const initialPlane=group(extendPlaneLayer);planeAlong(initialPlane,[109,207],[333,207],40);text(root,120,178,'Tangent space',12,'#315f33',500);
+const origin=[195,207],xs=[229,263,297,331],targets=xs.map(x=>[x,f(x)]),sources=xs.map(x=>[x,207]);
+const startLabel=group(extendNodeLayer);circle(startLabel,...origin,5.5,'#090d11','#090d11');math(startLabel,origin[0]-13,origin[1]-8,'q','near',15,'#111','end');
+const sample=group(extendNodeLayer),sampleGuide=group(extendLineLayer);line(sampleGuide,origin,[346,207],'#777',1.2,'4 3','arrow-arrow');circle(sample,299,207,4.2,'#f9f34f','#858339',1);math(sample,299,193,'q','rand',15,'#111','middle',true);
+const generation=group(extendLineLayer);line(generation,origin,[389,207],'#555',1.3,'4 4','arrow-arrow');
+const projectionLayer=group(extendLineLayer),edgeLayer=group(extendLineLayer),nodeLayer=group(extendNodeLayer);
+const items=sources.map((source,i)=>({source,target:targets[i],node:circle(nodeLayer,...source,4.7,'#6e9abb','#243d4c',1.2),arrow:line(projectionLayer,source,source,COLORS.purple,1.2,'','purple-arrow'),edge:line(edgeLayer,i?targets[i-1]:origin,targets[i],'#111',1.8)}));
+const stop=group(extendNodeLayer),stopLine=group(extendLineLayer);circle(stop,365,207,4.5,'#d74d4d','#842c36',1.1);math(stop,365,193,'q','k',15,'#353535','middle',true);line(stopLine,[365,207],[365,f(365)],'#4f53b5',1.8,'3 2');rect(stop,371,231,65,19,'#fffa60','none',1);latex(stop,375,245,String.raw`E_m(\bar{q}_{k})`,13,'#4c4b20');
+const renewed=group(extendPlaneLayer),newP=group(renewed);const slope=(38*2*Math.PI/500)*Math.sin((331-195)*2*Math.PI/500);planeAlong(newP,[292,f(331)-slope*39],[410,f(331)+slope*79],45);
+// The renewed plane stays below every existing edge and node.
+const finalRoot=group(extendNodeLayer);circle(finalRoot,...targets.at(-1),5.3,'#bd5aba','#582753',1.2);math(finalRoot,targets.at(-1)[0]+3,targets.at(-1)[1]+25,'q','root',15,'#223f39','middle');
+const captions=[group(),group(),group(),group()];
+lines(captions[0],748,216,['Tangent-Guided Sampling (TGS)'],16,'#325c3b',500,'middle');
+latex(captions[1],748,211,String.raw`E_m(\bar{q}_{k})>\varepsilon\quad\text{or}\quad K=K_{\max}`,17,'#263f3b','middle');text(captions[1],748,240,'[Candidate generation stops]',14,'#3c6249',400,'middle');
+lines(captions[2],748,216,['[GPU-parallel multi-edge projection]','Project and validate multiple edges concurrently'],14,'#335f37',400,'middle',1.4);
+lines(captions[3],748,217,['Valid prefix exists','[CONNECT]'],16,'#335f37',500,'middle',1.4);
+function renderScene(t){
+ const sampleOpacity=1-phase(t,1.15,1.4),stopOpacity=phase(t,1.9,2.2)*(1-phase(t,2.8,3.05));
+ op(sample,sampleOpacity);op(sampleGuide,sampleOpacity);show(generation,t,1.25,.2);op(stop,stopOpacity);op(stopLine,stopOpacity);
+ const proj=phase(t,3.02,3.8);
+ items.forEach((item,i)=>{const shown=phase(t,1.28+i*.11,1.48+i*.11);op(item.node,shown);pointMove(item.node,item.source,item.target,proj);set(item.node,{fill:proj>.9?'#f6c7ae':'#719ebf'});drawProgress(item.arrow,item.source,item.target,proj);op(item.arrow,shown*phase(t,3.02,3.2)*(1-phase(t,4.25,4.52)));drawProgress(item.edge,i?targets[i-1]:origin,item.target,phase(t,4.22+i*.045,4.58+i*.045));});
+ op(generation,phase(t,1.25,1.5)*(1-phase(t,4.1,4.4)));show(renewed,t,4.48,.32);show(finalRoot,t,4.4,.25);
+ op(captions[0],1-phase(t,1.32,1.52));op(captions[1],phase(t,1.46,1.75)*(1-phase(t,2.87,3.05)));op(captions[2],phase(t,3.03,3.27)*(1-phase(t,4.33,4.55)));show(captions[3],t,4.54,.22);
+}
+
+// Deterministic, seekable SVG timeline. No video, frame-sequence, or network dependency.
+const duration=CONFIG.duration,channel='patacon-diagram-animation';
+const embedded=new URLSearchParams(location.search).get('embed')==='1';
+const parented=embedded&&window.parent!==window;
+const parentOrigin=(location.protocol==='file:'||location.origin==='null')?'*':location.origin;
+const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
+let time=reduced.matches?duration-.45:0,playing=!reduced.matches,speed=1,visible=true,expanded=false,raf=0,previous=0;
+const viewer=$('viewer'),slider=$('timeline');slider.max=duration;
+if(embedded)document.documentElement.classList.add('embed');
+function timeLabel(n){return Math.floor(n/60)+':'+(n%60).toFixed(1).padStart(4,'0');}
+function render(){renderScene(time);root.dataset.time=time.toFixed(3);slider.value=time.toFixed(3);slider.setAttribute('aria-valuetext',`${time.toFixed(1)} of ${duration.toFixed(1)} seconds`);$('time').textContent=timeLabel(time)+' / '+timeLabel(duration);}
+function canRun(){return playing&&visible&&!document.hidden;}
+function tick(now){raf=0;if(!canRun()){previous=0;return;}if(previous)time=(time+Math.min(.12,(now-previous)/1000)*speed)%duration;previous=now;render();raf=requestAnimationFrame(tick);}
+function schedule(){previous=0;if(raf)cancelAnimationFrame(raf);raf=canRun()?requestAnimationFrame(tick):0;}
+function buttons(){document.querySelectorAll('.toggle-play').forEach(b=>{b.setAttribute('aria-label',playing?'Pause animation':'Play animation');b.querySelector('.symbol').innerHTML=playing?'<rect x="5" y="4" width="3.5" height="12" rx=".5"/><rect x="11.5" y="4" width="3.5" height="12" rx=".5"/>':'<path d="M6 3.5v13l10-6.5z"/>';const s=b.querySelector('.label');if(s)s.textContent=playing?'Pause':'Play';});document.querySelectorAll('.expand-label').forEach(b=>b.textContent=expanded?'Close':'Enlarge');}
+function play(){playing=true;buttons();schedule();}function pause(){playing=false;buttons();schedule();}function replay(){time=0;render();play();}function toggle(){playing?pause():play();}
+function seek(v,pauseAfter=false){v=Number(v);if(!Number.isFinite(v))return;time=clamp(v,0,duration-.001);previous=0;if(pauseAfter)pause();render();}
+function setSpeed(v){v=Number(v);if(!Number.isFinite(v)||v<=0)return;speed=clamp(v,.1,4);previous=0;const s=$('speed');if([...s.options].some(o=>Number(o.value)===speed))s.value=String(speed);}
+function post(type,extra={}){if(parented)window.parent.postMessage({channel,type,...extra},parentOrigin);}
+function setExpanded(v){expanded=!!v;document.documentElement.classList.toggle('expanded',expanded);buttons();if(expanded){visible=true;$('pause').focus({preventScroll:true});schedule();}}
+async function enlarge(){if(parented){post('toggle-expand');return;}if(document.fullscreenElement){try{await document.exitFullscreen();}catch{}return;}if(viewer.classList.contains('local-expanded')){viewer.classList.remove('local-expanded');setExpanded(false);return;}try{if(!viewer.requestFullscreen)throw new Error();await viewer.requestFullscreen();}catch{viewer.classList.add('local-expanded');setExpanded(true);}}
+for(const b of document.querySelectorAll('.toggle-play'))b.addEventListener('click',toggle);
+for(const b of document.querySelectorAll('.replay'))b.addEventListener('click',replay);
+for(const b of document.querySelectorAll('.enlarge'))b.addEventListener('click',enlarge);
+slider.addEventListener('input',()=>seek(slider.value));$('speed').addEventListener('change',e=>setSpeed(e.target.value));
+root.addEventListener('click',()=>{if(embedded&&!expanded)enlarge();});
+document.addEventListener('fullscreenchange',()=>setExpanded(!!document.fullscreenElement));document.addEventListener('visibilitychange',schedule);
+document.addEventListener('keydown',e=>{
+ if(expanded&&e.key==='Tab'){const cs=[...document.querySelectorAll('.controls button,.controls input,.controls select')],first=cs[0],last=cs.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}return;}
+ if(e.key==='Escape'&&expanded){if(parented)post('close-expand');else if(viewer.classList.contains('local-expanded')){viewer.classList.remove('local-expanded');setExpanded(false);}return;}
+ if(e.target.closest('input,select,button,a,textarea')||e.ctrlKey||e.metaKey||e.altKey)return;
+ if(e.code==='Space'){e.preventDefault();toggle();}else if(e.key.toLowerCase()==='r')replay();else if(e.key.toLowerCase()==='f')enlarge();else if(e.key==='ArrowLeft'){e.preventDefault();seek(time-.5);}else if(e.key==='ArrowRight'){e.preventDefault();seek(time+.5);}else if(e.key==='Home'){e.preventDefault();seek(0);}
+});
+window.addEventListener('message',e=>{if(!parented||e.source!==window.parent||(location.protocol!=='file:'&&location.origin!=='null'&&e.origin!==location.origin))return;const m=e.data;if(!m||m.channel!==channel)return;if(m.type==='visibility'){visible=!!m.visible;schedule();}else if(m.type==='expanded')setExpanded(m.expanded);else if(m.type==='restart')replay();else if(m.type==='seek')seek(m.time,true);});
+window.PATACON_ANIMATION=Object.freeze({play,pause,replay,seek,setSpeed,duration,get state(){return{time,playing,speed,visible,expanded};}});
+buttons();render();schedule();post('ready');
+
+</script>
+</body>
+</html>
