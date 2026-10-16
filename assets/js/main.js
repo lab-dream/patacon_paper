@@ -9,7 +9,7 @@
       link.rel = 'noopener';
       link.removeAttribute('aria-disabled');
       link.classList.remove('disabled', 'disabled-link');
-      link.textContent = 'Paper';
+      if (/soon/i.test(link.textContent)) link.textContent = 'Paper';
     });
   } else {
     paperLinks.forEach(link => link.addEventListener('click', event => event.preventDefault()));
@@ -23,7 +23,7 @@
       link.rel = 'noopener';
       link.removeAttribute('aria-disabled');
       link.classList.remove('disabled', 'disabled-link');
-      link.textContent = 'Code';
+      if (/soon/i.test(link.textContent)) link.textContent = 'Code';
     });
   } else {
     codeLinks.forEach(link => link.addEventListener('click', event => event.preventDefault()));
